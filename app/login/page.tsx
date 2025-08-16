@@ -1,11 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabase";
 import Link from "next/link";
-// ...
-<p><Link href="/forgot">Esqueci minha senha</Link></p>
-
+import { supabase } from "../../lib/supabase";
 
 export default function Page() {
   const [email, setEmail] = useState("");
@@ -20,7 +17,7 @@ export default function Page() {
     if (error) { setMsg(error.message); return; }
     router.push("/dashboard");
   }
-  
+
   return (
     <form onSubmit={onSubmit} style={{maxWidth:420}}>
       <h1>Login</h1>
@@ -28,6 +25,7 @@ export default function Page() {
       <label>Senha<br/><input required type="password" value={password} onChange={e=>setPassword(e.target.value)} /></label><br/>
       <button type="submit">Entrar</button>
       <p>{msg}</p>
+      <p><Link href="/forgot">Esqueci minha senha</Link></p>
     </form>
   );
 }
