@@ -1,11 +1,8 @@
 "use client";
 
-import type { Metadata } from "next";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-
-export const metadata: Metadata = { title: "Login — enewRPG" };
 
 export default function Page() {
   const [email, setEmail] = useState("");
