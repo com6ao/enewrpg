@@ -27,3 +27,6 @@ export default function Page() {
     </form>
   );
 }
+import Link from "next/link";
+// ...
+<p><Link href="/forgot">Esqueci minha senha</Link></p>
