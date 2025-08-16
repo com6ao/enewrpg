@@ -16,6 +16,9 @@ export default function Page() {
     if (error) { setMsg(error.message); return; }
     router.push("/dashboard");
   }
+import Link from "next/link";
+// ...
+<p><Link href="/forgot">Esqueci minha senha</Link></p>
 
   return (
     <form onSubmit={onSubmit} style={{maxWidth:420}}>
@@ -27,6 +30,3 @@ export default function Page() {
     </form>
   );
 }
-import Link from "next/link";
-// ...
-<p><Link href="/forgot">Esqueci minha senha</Link></p>
