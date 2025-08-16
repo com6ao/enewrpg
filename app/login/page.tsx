@@ -2,6 +2,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import Link from "next/link";
+// ...
+<p><Link href="/forgot">Esqueci minha senha</Link></p>
+
 
 export default function Page() {
   const [email, setEmail] = useState("");
@@ -16,10 +20,7 @@ export default function Page() {
     if (error) { setMsg(error.message); return; }
     router.push("/dashboard");
   }
-import Link from "next/link";
-// ...
-<p><Link href="/forgot">Esqueci minha senha</Link></p>
-
+  
   return (
     <form onSubmit={onSubmit} style={{maxWidth:420}}>
       <h1>Login</h1>
