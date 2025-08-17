@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const { error: e2 } = await supabase
     .from("profiles")
     .upsert({ id: user.id, active_character_id: character_id }, { onConflict: "id" })
-    .eq("id", user.id); // importante por causa do RLS
+    .eq("id", user.id); // obrigatório quando RLS está habilitado
 
   if (e2) return new NextResponse(e2.message, { status: 400 });
 
