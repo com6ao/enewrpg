@@ -1,31 +1,22 @@
-"use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { supabase } from "../../lib/supabase";
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import Nav from "./Nav";
 
-export default function Page() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const router = useRouter();
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setMsg("Entrando...");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { setMsg(error.message); return; }
-    router.push("/dashboard");
-  }
+export const metadata: Metadata = { title: "enewRPG", description: "RPG online" };
 
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <form onSubmit={onSubmit} style={{maxWidth:420}}>
-      <h1>Login</h1>
-      <label>Email<br/><input required type="email" value={email} onChange={e=>setEmail(e.target.value)} /></label><br/>
-      <label>Senha<br/><input required type="password" value={password} onChange={e=>setPassword(e.target.value)} /></label><br/>
-      <button type="submit">Entrar</button>
-      <p>{msg}</p>
-      <p><Link href="/forgot">Esqueci minha senha</Link></p>
-    </form>
+    <html lang="pt-BR">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <header className="site-header">
+          <div className="container"><Nav /></div>
+        </header>
+        <main className="container">{children}</main>
+      </body>
+    </html>
   );
 }
