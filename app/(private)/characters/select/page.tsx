@@ -1,31 +1,52 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabaseServer";
+"use client";
 
-export async function POST(req: Request) {
-  const { character_id } = await req.json();
-  if (!character_id) return new NextResponse("payload inválido", { status: 400 });
+import { useEffect, useState } from "react";
 
-  const supabase = await getSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return new NextResponse("Não autenticado", { status: 401 });
+type Character = {
+  id: string;
+  name: string;
+  surname: string;
+  universe: string;
+  energy: string;
+  lvl: number;
+  xp: number;
+};
 
-  // verificar se personagem pertence ao usuário
-  const { data: char, error: e1 } = await supabase
-    .from("characters")
-    .select("id")
-    .eq("id", character_id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (e1) return new NextResponse(e1.message, { status: 400 });
-  if (!char) return new NextResponse("Personagem inválido", { status: 400 });
+export default function SelectCharacterPage() {
+  const [chars, setChars] = useState<Character[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // salvar como ativo na tabela profiles
-  const { error: e2 } = await supabase
-    .from("profiles")
-    .upsert({ id: user.id, active_character_id: character_id }, { onConflict: "id" })
-    .eq("id", user.id); // importante por causa do RLS
+  useEffect(() => {
+    async function load() {
+      const r = await fetch("/api/characters/list");
+      const data = await r.json();
+      setChars(data ?? []);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
-  if (e2) return new NextResponse(e2.message, { status: 400 });
+  async function selectCharacter(id: string) {
+    const r = await fetch("/api/characters/select", {
+      method: "POST",
+      body: JSON.stringify({ character_id: id }),
+    });
+    if (!r.ok) { alert(await r.text()); return; }
+    location.href = "/dashboard";
+  }
 
-  return NextResponse.json({ ok: true });
+  return (
+    <main className="container">
+      <h1>Selecionar Personagem</h1>
+      {loading ? <p>carregando...</p> :
+        chars.map((c) => (
+          <div key={c.id} className="card" style={{marginBottom:12}}>
+            <div className="card-title">{c.name} {c.surname}</div>
+            <div className="muted">{c.universe} · {c.energy} · Lv {c.lvl} · XP {c.xp}</div>
+            <button className="btn" onClick={() => selectCharacter(c.id)}>Selecionar</button>
+          </div>
+        ))
+      }
+    </main>
+  );
 }
