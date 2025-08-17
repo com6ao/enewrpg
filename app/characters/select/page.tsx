@@ -1,40 +1,77 @@
+// app/characters/select/page.tsx
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
-export default async function SelectCharacter(){
-  const cookieStore = cookies();
+export const metadata = { title: 'Selecionar Personagem — enewRPG' };
+
+export default async function SelectCharactersPage() {
+  const cookieStore = await cookies(); // <- precisa de await no Next 15
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { get: (n:string)=>cookieStore.get(n)?.value } }
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options?: any) {
+          cookieStore.set({ name, value, ...(options || {}) });
+        },
+        remove(name: string, options?: any) {
+          cookieStore.set({ name, value: '', ...(options || {}) });
+        },
+      },
+    }
   );
 
   const { data: { user } } = await supabase.auth.getUser();
-  if(!user) return <div className="container">Faça login.</div>;
+  if (!user) {
+    return (
+      <main className="container">
+        <h1>Criar/Selecionar Personagem</h1>
+        <p className="muted">Faça login para ver seus personagens.</p>
+      </main>
+    );
+  }
 
-  const { data: chars } = await supabase
+  const { data: chars, error } = await supabase
     .from('characters')
-    .select('id,name,surname,universe,energy,level,str,dex,intt,wis,cha,con')
+    .select('id,name,surname,universe,energy,level,xp,created_at')
     .eq('user_id', user.id)
-    .order('created_at', { ascending:false });
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return (
+      <main className="container">
+        <h1>Criar/Selecionar Personagem</h1>
+        <p className="muted">Erro: {error.message}</p>
+      </main>
+    );
+  }
 
   return (
-    <div className="container">
-      <h1>Selecionar personagem</h1>
-      <div className="grid-cards">
-        {(chars??[]).map(c=>(
-          <div key={c.id} className="card">
-            <div className="card-title">{c.name} {c.surname}</div>
-            <div className="card-desc">{c.universe} • {c.energy} • Nível {c.level}</div>
-            <div className="muted">FOR {c.str} | DES {c.dex} | INT {c.intt} | SAB {c.wis} | CAR {c.cha} | CON {c.con}</div>
-            <Link href="/" className="btn" style={{display:'inline-block',marginTop:8}}>Entrar</Link>
-          </div>
-        ))}
+    <main className="container">
+      <h1>Criar/Selecionar Personagem</h1>
+
+      <div className="card" style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+        <Link className="btn" href="/characters/new">Criar</Link>
+        <Link className="btn" href="/characters">Voltar</Link>
       </div>
-      <div style={{marginTop:16}}>
-        <Link href="/characters/new" className="btn">Criar novo</Link>
-      </div>
-    </div>
+
+      {!chars?.length ? (
+        <p className="muted">Você ainda não tem personagens.</p>
+      ) : (
+        <div className="grid-cards">
+          {chars.map((c) => (
+            <div key={c.id} className="card">
+              <div className="card-title">{c.name} {c.surname}</div>
+              <div className="muted">{c.universe} · {c.energy} · Lv {c.level} · XP {c.xp}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </main>
   );
 }
-
