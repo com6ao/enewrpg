@@ -1,11 +1,13 @@
 // app/characters/page.tsx
-export default function CharactersIndex(){
+import Link from 'next/link';
+
+export default function CharactersIndex() {
   return (
     <main className="container">
       <h1>Criar/Selecionar Personagem</h1>
-      <div className="card" style={{display:'flex',gap:12}}>
-        <a className="btn" href="/characters/new">Criar</a>
-        <a className="btn" href="/characters/select">Selecionar</a>
+      <div className="card" style={{ display: 'flex', gap: 12 }}>
+        <Link className="btn" href="/characters/new">Criar</Link>
+        <Link className="btn" href="/characters/select">Selecionar</Link>
       </div>
     </main>
   );
