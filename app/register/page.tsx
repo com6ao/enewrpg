@@ -4,31 +4,36 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
 export default function Page() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const router = useRouter();
+  const [email,setEmail]=useState(""); const [password,setPassword]=useState("");
+  const [msg,setMsg]=useState<string|null>(null); const router=useRouter();
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(e:React.FormEvent){ e.preventDefault();
     setMsg("Criando conta...");
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${location.origin}/` },
+      email, password, options:{ emailRedirectTo: `${location.origin}/` }
     });
-    if (error) { setMsg(error.message); return; }
-    if (data?.user && !data.user.email_confirmed_at) { setMsg("Confirme seu e-mail."); return; }
+    if(error){ setMsg(error.message); return; }
+    if(data?.user && !data.user.email_confirmed_at){ setMsg("Verifique seu e-mail."); return; }
     router.push("/dashboard");
   }
 
   return (
-    <form onSubmit={onSubmit} style={{maxWidth:420}}>
+    <div className="card" style={{maxWidth:480}}>
       <h1>Registrar</h1>
-      <label>Email<br/><input required type="email" value={email} onChange={e=>setEmail(e.target.value)} /></label><br/>
-      <label>Senha<br/><input required type="password" value={password} onChange={e=>setPassword(e.target.value)} /></label><br/>
-      <button type="submit">Criar conta</button>
-      <p>{msg}</p>
-    </form>
+      <form onSubmit={onSubmit} className="form">
+        <div className="field">
+          <label htmlFor="email">Email</label>
+          <input id="email" className="input" type="email" required
+                 value={email} onChange={e=>setEmail(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="password">Senha</label>
+          <input id="password" className="input" type="password" required
+                 value={password} onChange={e=>setPassword(e.target.value)} />
+        </div>
+        <button className="btn" type="submit">Criar conta</button>
+      </form>
+      <p className="muted" style={{marginTop:8}}>{msg}</p>
+    </div>
   );
 }
