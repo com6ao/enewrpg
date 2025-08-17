@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Nav from "./Nav";
-import AuthGuard from "@/components/AuthGuard";         // << NOVO
+import AuthGuard from "@/app/components/AuthGuard";         // << NOVO
 import { supabase } from "@/lib/supabase";
 
 supabase.auth.getSession(); // sincronizar sessão logo no boot
