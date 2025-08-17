@@ -101,3 +101,15 @@ main.container{ padding-top: 24px; }
 /* ===== Tipografia ===== */
 h1{ font-size: clamp(20px, 2.4vw, 28px); margin: 0 0 16px; }
 p{ margin: 8px 0; }
+
+/* Grid de cards */
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.card-title{font-weight:600;margin:0 0 6px}
+.card-desc{color:var(--muted);font-size:.92rem}
+
+/* Form padrão */
+.form{display:grid;gap:12px}
+.field{display:grid;gap:6px}
+.input{font-size:16px}
+.input:focus{outline:2px solid var(--ring);outline-offset:2px;border-color:var(--primary)}
+.form .btn{margin-top:4px;width:100%}
