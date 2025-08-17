@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { resolveEnergy } from '@/lib/rules';
+import { resolveEnergy } from '../../../../lib/rules';
 
 export async function POST(req: Request){
   const body = await req.json();
