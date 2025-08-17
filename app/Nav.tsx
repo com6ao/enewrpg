@@ -1,4 +1,6 @@
+"use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const links = [
   ["/","Início"],["/login","Login"],["/register","Registrar"],
@@ -8,9 +10,12 @@ const links = [
 ];
 
 export default function Nav(){
+  const pathname = usePathname();
   return (
-    <nav style={{display:"grid",gridAutoFlow:"column",gap:12,overflowX:"auto",padding:"12px 16px",borderBottom:"1px solid #eee"}}>
-      {links.map(([href,label]) => <Link key={href} href={href} style={{whiteSpace:"nowrap"}}>{label}</Link>)}
+    <nav className="topnav">
+      {links.map(([href,label]) => (
+        <Link key={href} href={href} aria-current={pathname===href ? "page" : undefined}>{label}</Link>
+      ))}
     </nav>
   );
 }
