@@ -1,18 +1,65 @@
+// app/(private)/arena/page.tsx
 "use client";
 import { useEffect, useRef, useState } from "react";
 import HPBar from "../../components/HPBar";
-import { parseLog, type Event } from "@/lib/combatLog";
+import { parseLog as parseTextLog, type Event } from "@/lib/combatLog";
 
 type Enemy = { id: string; name: string; level: number };
 type BattleResponse = { enemy: Enemy; result: any; log: any[] };
 
+// tenta extrair eventos de logs estruturados
+function parseStructuredLog(items: any[], winner?: string): Event[] {
+  const evs: Event[] = [];
+  for (const it of items) {
+    const t = (it?.t ?? it?.type ?? "").toString().toLowerCase();
+    const src = (it?.src ?? it?.by ?? it?.attacker ?? "").toString().toLowerCase();
+    const dmg = Number(it?.dmg ?? it?.damage ?? it?.amount ?? 0);
+
+    if (t.includes("crit")) {
+      evs.push({ t: "crit", src: src === "player" ? "player" : "enemy", dmg });
+      continue;
+    }
+    if (t.includes("hit") || t === "attack") {
+      evs.push({ t: "hit", src: src === "player" ? "player" : "enemy", dmg });
+      continue;
+    }
+    if (t.includes("miss") || t.includes("dodge") || t === "evade") {
+      evs.push({ t: "miss", src: src === "player" ? "player" : "enemy" });
+      continue;
+    }
+    // fallback neutro para manter o ritmo
+    evs.push({ t: "miss", src: src === "player" ? "player" : "enemy" });
+  }
+  if (winner) {
+    const w =
+      winner === "player" || /vit[oó]ria/i.test(winner) ? "player" :
+      winner === "enemy"  || /derrota/i.test(winner) ? "enemy"  : "draw";
+    evs.push({ t: "end", winner: w });
+  }
+  return evs;
+}
+
+// escolhe o parser certo
+function toEvents(log: any[], winner?: string): { events: Event[]; lines: string[] } {
+  const isObj = Array.isArray(log) && log.some(x => typeof x === "object");
+  if (isObj) {
+    const lines = log.map((x: any) => typeof x?.text === "string" ? x.text : JSON.stringify(x));
+    return { events: parseStructuredLog(log, winner), lines };
+  } else {
+    const lines = (log ?? []).map((x: any) => String(x));
+    return { events: parseTextLog(lines, winner), lines };
+  }
+}
+
 export default function ArenaPage() {
   const [area, setArea] = useState<"creep" | "jungle" | "ancient" | "boss">("creep");
   const [state, setState] = useState<"idle" | "loading" | "playing" | "done">("idle");
+  const [auto, setAuto] = useState(true);
 
   const [enemy, setEnemy] = useState<Enemy | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [cursor, setCursor] = useState(0);
+  const [linesAll, setLinesAll] = useState<string[]>([]);
   const [linesShown, setLinesShown] = useState<string[]>([]);
 
   const [pHP, setPHP] = useState({ cur: 0, max: 0 });
@@ -23,46 +70,30 @@ export default function ArenaPage() {
 
   async function startBattle() {
     setState("loading");
-    setEvents([]); setCursor(0); setLinesShown([]);
+    setEvents([]); setCursor(0); setLinesShown([]); setLinesAll([]);
+    if (timer.current) clearTimeout(timer.current);
 
-    const r = await fetch("/api/battle", {
-      method: "POST",
-      body: JSON.stringify({ area }),
-    });
+    const r = await fetch("/api/battle", { method: "POST", body: JSON.stringify({ area }) });
     if (!r.ok) { alert(await r.text()); setState("idle"); return; }
     const data: BattleResponse = await r.json();
 
-    // DEBUG
     console.debug("BATTLE RESPONSE:", data);
-    console.debug("RAW LINES:", data?.log);
 
-    const playerMax =
-      data.result?.playerMaxHp ??
-      data.result?.player?.hpMax ??
-      data.result?.player_hp_max ??
-      100;
-    const enemyMax =
-      data.result?.enemyMaxHp ??
-      data.result?.enemy?.hpMax ??
-      data.result?.enemy_hp_max ??
-      100;
+    const playerMax = data.result?.playerMaxHp ?? data.result?.player?.hpMax ?? data.result?.player_hp_max ?? 100;
+    const enemyMax  = data.result?.enemyMaxHp  ?? data.result?.enemy?.hpMax  ?? data.result?.enemy_hp_max  ?? 100;
 
     setPHP({ cur: playerMax, max: playerMax });
     setEHP({ cur: enemyMax,  max: enemyMax });
     setEnemy(data.enemy);
 
-    const winner =
-      data.result?.winner ??
-      data.result?.outcome ??
-      data.result?.victory ??
-      undefined;
+    const winner = data.result?.winner ?? data.result?.outcome ?? data.result?.victory ?? undefined;
+    const { events: evs, lines } = toEvents(data.log ?? [], winner);
 
-    const evs = parseLog((data.log ?? []).map(String), winner);
     console.debug("PARSED EVENTS:", evs);
-
     setEvents(evs);
+    setLinesAll(lines);
     setState("playing");
-    tick(0, evs, (data.log ?? []).map(String));
+    if (auto) tick(0, evs, lines);
   }
 
   function tick(i: number, evs: Event[], rawLines: string[]) {
@@ -70,29 +101,28 @@ export default function ArenaPage() {
     const ev = evs[i];
 
     if (ev.t === "hit" || ev.t === "crit") {
-      if (ev.src === "player") {
-        setEHP(h => ({ ...h, cur: Math.max(0, h.cur - ev.dmg) }));
-      } else {
-        setPHP(h => ({ ...h, cur: Math.max(0, h.cur - ev.dmg) }));
-      }
+      if (ev.src === "player") setEHP(h => ({ ...h, cur: Math.max(0, h.cur - (ev as any).dmg) }));
+      else setPHP(h => ({ ...h, cur: Math.max(0, h.cur - (ev as any).dmg) }));
     }
 
-    setLinesShown(ls => {
-      const raw = rawLines[Math.min(i, rawLines.length - 1)];
-      const text = typeof raw === "string" ? raw : JSON.stringify(raw);
-      return [...ls, text ?? JSON.stringify(ev)];
-    });
+    setLinesShown(ls => [...ls, rawLines[Math.min(i, rawLines.length - 1)] ?? JSON.stringify(ev)]);
 
     const delay = ev.t === "crit" ? 900 : ev.t === "hit" ? 650 : 450;
-    timer.current = setTimeout(() => {
-      setCursor(i + 1);
-      tick(i + 1, evs, rawLines);
-    }, delay);
+    const next = () => { setCursor(i + 1); if (auto) tick(i + 1, evs, rawLines); };
+    if (auto) {
+      timer.current = setTimeout(next, delay);
+    }
+  }
+
+  // próximo turno manual
+  function nextTurn() {
+    if (state !== "playing" || auto) return;
+    tick(cursor, events, linesAll);
   }
 
   function reset() {
     if (timer.current) clearTimeout(timer.current);
-    setState("idle"); setEvents([]); setCursor(0); setLinesShown([]);
+    setState("idle"); setEvents([]); setCursor(0); setLinesShown([]); setLinesAll([]);
     setEnemy(null); setPHP({ cur: 0, max: 0 }); setEHP({ cur: 0, max: 0 });
   }
 
@@ -100,7 +130,7 @@ export default function ArenaPage() {
     <main className="container" style={{ display: "grid", gap: 12 }}>
       <h1>Arena</h1>
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         {(["creep","jungle","ancient","boss"] as const).map(a => (
           <button
             key={a}
@@ -112,14 +142,18 @@ export default function ArenaPage() {
             {a}
           </button>
         ))}
-        <button
-          className="btn"
-          onClick={startBattle}
-          disabled={state === "loading" || state === "playing"}
-        >
-          Lutar
-        </button>
+        <button className="btn" onClick={startBattle} disabled={state === "loading" || state === "playing"}>Lutar</button>
         {state !== "idle" && <button className="btn" onClick={reset}>Reset</button>}
+
+        {/* controle de reprodução */}
+        <label style={{ marginLeft: 12, display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={auto}
+            onChange={e => { setAuto(e.target.checked); if (e.target.checked && state==="playing") tick(cursor, events, linesAll); }} />
+          Auto
+        </label>
+        {!auto && state === "playing" && (
+          <button className="btn" onClick={nextTurn}>Próximo turno</button>
+        )}
       </div>
 
       {state !== "idle" && (
@@ -139,9 +173,7 @@ export default function ArenaPage() {
 
           <div className="card" style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}>
             {linesShown.map((line, idx) => (
-              <div key={idx} style={{ padding: 6, borderBottom: "1px solid #222" }}>
-                {line}
-              </div>
+              <div key={idx} style={{ padding: 6, borderBottom: "1px solid #222" }}>{line}</div>
             ))}
           </div>
 
