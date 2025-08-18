@@ -1,4 +1,3 @@
-// app/api/battle/start/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import { resolveCombat, Attrs } from "@/lib/combat";
@@ -13,7 +12,8 @@ export async function POST(req: Request) {
 
   const { data: profile } = await supabase
     .from("profiles").select("active_character_id").eq("id", user.id).maybeSingle();
-  if (!profile?.active_character_id) return new NextResponse("Nenhum personagem ativo", { status: 400 });
+  if (!profile?.active_character_id)
+    return new NextResponse("Nenhum personagem ativo", { status: 400 });
 
   const { data: char } = await supabase
     .from("characters").select("*").eq("id", profile.active_character_id).maybeSingle();
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
   const { data: enemies } = await supabase
     .from("enemies").select("*").eq("category", area);
-  if (!enemies?.length) return new NextResponse("Nenhum inimigo para esta área", { status: 400 });
+  if (!enemies?.length) return new NextResponse("Nenhum inimigo nesta área", { status: 400 });
 
   const enemy = enemies[Math.floor(Math.random() * enemies.length)];
 
@@ -34,11 +34,11 @@ export async function POST(req: Request) {
     wis: enemy.wis, cha: enemy.cha, con: enemy.con, luck: enemy.luck, name: enemy.name,
   };
 
-  // Simula tudo uma vez. Vamos revelar aos poucos no /act
+  // Resolve combate completo e salva no banco
   const outcome = await resolveCombat(playerAttrs, enemyAttrs);
-  const log = Array.isArray(outcome?.log) ? outcome!.log : [];
-  const playerMax = outcome?.playerMaxHp ?? outcome?.player?.hpMax ?? 100;
-  const enemyMax  = outcome?.enemyMaxHp  ?? outcome?.enemy?.hpMax  ?? 100;
+  const log = Array.isArray(outcome?.log) ? outcome.log : [];
+  const playerMax = outcome?.playerMaxHp ?? 100;
+  const enemyMax  = outcome?.enemyMaxHp  ?? 100;
 
   const { data: inserted, error } = await supabase
     .from("battles")
@@ -56,8 +56,7 @@ export async function POST(req: Request) {
       status: "active",
       cursor: 0,
     })
-    .select("id, enemy_name, player_hp, player_hp_max, enemy_hp, enemy_hp_max, cursor, status, winner")
-    .single();
+    .select("*").single();
 
   if (error) return new NextResponse(error.message, { status: 400 });
 
