@@ -10,18 +10,23 @@ export async function POST(req: Request) {
   const { character_id } = await req.json();
   if (!character_id) return new NextResponse("character_id obrigatório", { status: 400 });
 
-  const cookieStore = cookies();
+  // Edge retorna Promise<ReadonlyRequestCookies>
+  const cookieStore = await cookies();
+  // Usamos um Response “portador” para set/remove cookies
+  const carrier = NextResponse.next();
+
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       get: (name: string) => cookieStore.get(name)?.value,
       set: (name: string, value: string, options?: any) =>
-        cookieStore.set({ name, value, ...options }),
-      remove: (name: string, _options?: any) => cookieStore.delete(name),
+        carrier.cookies.set({ name, value, ...options }),
+      remove: (name: string, options?: any) =>
+        carrier.cookies.set({ name, value: "", ...options }),
     },
   });
 
   const { data: { user }, error: uerr } = await supabase.auth.getUser();
-  if (uerr || !user) return new NextResponse("não autenticado", { status: 401 });
+  if (uerr || !user) return new NextResponse("não autenticado", { status: 401, headers: carrier.headers });
 
   const { error: derr } = await supabase
     .from("characters")
@@ -29,7 +34,7 @@ export async function POST(req: Request) {
     .eq("id", character_id)
     .eq("user_id", user.id);
 
-  if (derr) return new NextResponse(derr.message, { status: 400 });
+  if (derr) return new NextResponse(derr.message, { status: 400, headers: carrier.headers });
 
   await supabase
     .from("profiles")
@@ -37,5 +42,5 @@ export async function POST(req: Request) {
     .eq("id", user.id)
     .eq("active_character_id", character_id);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { headers: carrier.headers });
 }
