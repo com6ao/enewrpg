@@ -3,48 +3,74 @@ import { useEffect, useRef, useState } from "react";
 import HPBar from "@/components/HPBar";
 import { parseLog, type Event } from "@/lib/combatLog";
 
-type Enemy = { id: string; name: string; base_hp: number; /* ...outros campos se houver */ };
+type Enemy = { id: string; name: string; level: number };
 type BattleResponse = {
   enemy: Enemy;
-  result: { winner: "player" | "enemy" | "draw"; playerMaxHp: number; enemyMaxHp: number; playerName?: string };
-  log: string[]; // já existe na sua API
+  // o backend retorna ...result e log
+  result: any;           // não forçamos campos; lidamos com fallbacks
+  log: string[];
 };
 
 export default function ArenaPage() {
-  const [area, setArea] = useState<"creep"|"jungle"|"ancient"|"boss">("creep");
-  const [state, setState] = useState<"idle"|"loading"|"playing"|"done">("idle");
+  const [area, setArea] =
+    useState<"creep" | "jungle" | "ancient" | "boss">("creep");
+  const [state, setState] =
+    useState<"idle" | "loading" | "playing" | "done">("idle");
+
+  const [enemy, setEnemy] = useState<Enemy | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [cursor, setCursor] = useState(0);
-  const [enemy, setEnemy] = useState<Enemy | null>(null);
+  const [linesShown, setLinesShown] = useState<string[]>([]);
+
   const [pHP, setPHP] = useState({ cur: 0, max: 0 });
   const [eHP, setEHP] = useState({ cur: 0, max: 0 });
-  const [linesShown, setLinesShown] = useState<string[]>([]);
-  const timer = useRef<NodeJS.Timeout | null>(null);
 
+  const timer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   async function startBattle() {
     setState("loading");
     setEvents([]); setCursor(0); setLinesShown([]);
 
-    const r = await fetch("/api/battle", { method: "POST", body: JSON.stringify({ area }) });
+    const r = await fetch("/api/battle", {
+      method: "POST",
+      body: JSON.stringify({ area }),
+    });
     if (!r.ok) { alert(await r.text()); setState("idle"); return; }
     const data: BattleResponse = await r.json();
 
-    const evs = parseLog(data.log, data.result?.winner);
+    // fallbacks para HP inicial conforme estrutura disponível
+    const playerMax =
+      data.result?.playerMaxHp ??
+      data.result?.player?.hpMax ??
+      data.result?.player_hp_max ??
+      100;
+    const enemyMax =
+      data.result?.enemyMaxHp ??
+      data.result?.enemy?.hpMax ??
+      data.result?.enemy_hp_max ??
+      100;
+
+    setPHP({ cur: playerMax, max: playerMax });
+    setEHP({ cur: enemyMax,  max: enemyMax });
     setEnemy(data.enemy);
-    setPHP({ cur: data.result.playerMaxHp, max: data.result.playerMaxHp });
-    setEHP({ cur: data.result.enemyMaxHp,  max: data.result.enemyMaxHp });
+
+    const winner =
+      data.result?.winner ??
+      data.result?.outcome ??
+      data.result?.victory ??
+      undefined;
+
+    const evs = parseLog(data.log ?? [], winner);
     setEvents(evs);
     setState("playing");
-    tick(0, evs, data.log);
+    tick(0, evs, data.log ?? []);
   }
 
   function tick(i: number, evs: Event[], rawLines: string[]) {
     if (i >= evs.length) { setState("done"); return; }
     const ev = evs[i];
 
-    // Atualiza HP conforme evento
     if (ev.t === "hit" || ev.t === "crit") {
       if (ev.src === "player") {
         setEHP(h => ({ ...h, cur: Math.max(0, h.cur - ev.dmg) }));
@@ -52,7 +78,7 @@ export default function ArenaPage() {
         setPHP(h => ({ ...h, cur: Math.max(0, h.cur - ev.dmg) }));
       }
     }
-    // Mostra a linha correspondente se existir
+
     setLinesShown(ls => {
       const nextLine = rawLines[Math.min(i, rawLines.length - 1)];
       return [...ls, nextLine ?? JSON.stringify(ev)];
@@ -68,7 +94,7 @@ export default function ArenaPage() {
   function reset() {
     if (timer.current) clearTimeout(timer.current);
     setState("idle"); setEvents([]); setCursor(0); setLinesShown([]);
-    setEnemy(null); setPHP({cur:0,max:0}); setEHP({cur:0,max:0});
+    setEnemy(null); setPHP({ cur: 0, max: 0 }); setEHP({ cur: 0, max: 0 });
   }
 
   return (
@@ -77,13 +103,24 @@ export default function ArenaPage() {
 
       <div style={{ display: "flex", gap: 8 }}>
         {(["creep","jungle","ancient","boss"] as const).map(a => (
-          <button key={a} className="btn" disabled={state==="loading"||state==="playing"} onClick={()=>setArea(a)}
-            style={{ background: area===a ? "#3498db" : undefined }}>
+          <button
+            key={a}
+            className="btn"
+            disabled={state === "loading" || state === "playing"}
+            onClick={() => setArea(a)}
+            style={{ background: area === a ? "#3498db" : undefined }}
+          >
             {a}
           </button>
         ))}
-        <button className="btn" onClick={startBattle} disabled={state==="loading"||state==="playing"}>Lutar</button>
-        {state!=="idle" && <button className="btn" onClick={reset}>Reset</button>}
+        <button
+          className="btn"
+          onClick={startBattle}
+          disabled={state === "loading" || state === "playing"}
+        >
+          Lutar
+        </button>
+        {state !== "idle" && <button className="btn" onClick={reset}>Reset</button>}
       </div>
 
       {state !== "idle" && (
