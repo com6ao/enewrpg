@@ -1,20 +1,24 @@
-'use client';
-import { useState } from 'react';
-import { ALL_SURNAMES } from '@/lib/rules';
+"use client";
+import { useState } from "react";
+import { ALL_SURNAMES } from "@/lib/rules";
 
 export default function NewCharacterPage(){
   const [name, setName] = useState('');
   const [surname, setSurname] = useState<string>(ALL_SURNAMES[0]);
   const [pts, setPts] = useState(20);
-  const [attr, setAttr] = useState({str:0,dex:0,intt:0,wis:0,cha:0,con:0});
+
+  const [attr, setAttr] = useState({
+    str:10, dex:10, intt:10, wis:10, cha:10, con:10, luck:10
+  });
 
   const rows = [
     ['Força','str'],['Destreza','dex'],['Inteligência','intt'],
     ['Sabedoria','wis'],['Carisma','cha'],['Constituição','con'],
+    ['Sorte','luck'],
   ] as const;
 
   function inc(k: keyof typeof attr){ if(pts>0){ setAttr(a=>({...a,[k]:a[k]+1})); setPts(p=>p-1); } }
-  function dec(k: keyof typeof attr){ if(attr[k]>0){ setAttr(a=>({...a,[k]:a[k]-1})); setPts(p=>p+1); } }
+  function dec(k: keyof typeof attr){ if(attr[k]>10){ setAttr(a=>({...a,[k]:a[k]-1})); setPts(p=>p+1); } }
 
   async function submit(){
     const r = await fetch('/api/characters/create',{ method:'POST', body: JSON.stringify({ name, surname, attrs: attr }) });
@@ -26,6 +30,7 @@ export default function NewCharacterPage(){
     <div className="container">
       <h1>Criar personagem</h1>
       <div className="card" style={{display:'grid',gap:12}}>
+
         <label className="field">
           <span>Nome</span>
           <input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="nome único" />
@@ -38,7 +43,7 @@ export default function NewCharacterPage(){
           </select>
         </label>
 
-        <div className="muted">Pontos: {pts}</div>
+        <div className="muted">Pontos distribuíveis: {pts}</div>
 
         <div className="grid-cards">
           {rows.map(([label,key])=>(
@@ -56,4 +61,3 @@ export default function NewCharacterPage(){
     </div>
   );
 }
-
