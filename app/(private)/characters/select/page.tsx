@@ -15,12 +15,14 @@ type Character = {
 export default function SelectCharacterPage() {
   const [chars, setChars] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const r = await fetch("/api/characters/list");
-      const data = await r.json();
-      setChars(data ?? []);
+      const data = await r.json();             // <- { characters: [...], active_character_id: ... }
+      setChars(data.characters ?? []);
+      setActiveId(data.active_character_id ?? null);
       setLoading(false);
     }
     load();
@@ -41,9 +43,18 @@ export default function SelectCharacterPage() {
       {loading ? <p>carregando...</p> :
         chars.map((c) => (
           <div key={c.id} className="card" style={{marginBottom:12}}>
-            <div className="card-title">{c.name} {c.surname}</div>
+            <div className="card-title">
+              {c.name} {c.surname}
+              {activeId === c.id && <span style={{color:"#2ecc71", marginLeft:6}}>(Ativo)</span>}
+            </div>
             <div className="muted">{c.universe} · {c.energy} · Lv {c.lvl} · XP {c.xp}</div>
-            <button className="btn" onClick={() => selectCharacter(c.id)}>Selecionar</button>
+            <button
+              className="btn"
+              disabled={activeId === c.id}
+              onClick={() => selectCharacter(c.id)}
+            >
+              {activeId === c.id ? "Selecionado" : "Selecionar"}
+            </button>
           </div>
         ))
       }
