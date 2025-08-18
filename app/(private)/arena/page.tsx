@@ -4,7 +4,7 @@ import HPBar from "../../components/HPBar";
 import { parseLog, type Event } from "@/lib/combatLog";
 
 type Enemy = { id: string; name: string; level: number };
-type BattleResponse = { enemy: Enemy; result: any; log: string[] };
+type BattleResponse = { enemy: Enemy; result: any; log: any[] };
 
 export default function ArenaPage() {
   const [area, setArea] = useState<"creep" | "jungle" | "ancient" | "boss">("creep");
@@ -32,8 +32,9 @@ export default function ArenaPage() {
     if (!r.ok) { alert(await r.text()); setState("idle"); return; }
     const data: BattleResponse = await r.json();
 
-    // DEBUG: resposta crua do backend
+    // DEBUG
     console.debug("BATTLE RESPONSE:", data);
+    console.debug("RAW LINES:", data?.log);
 
     const playerMax =
       data.result?.playerMaxHp ??
@@ -56,14 +57,12 @@ export default function ArenaPage() {
       data.result?.victory ??
       undefined;
 
-    const evs = parseLog(data.log ?? [], winner);
-
-    // DEBUG: eventos derivados do log
+    const evs = parseLog((data.log ?? []).map(String), winner);
     console.debug("PARSED EVENTS:", evs);
 
     setEvents(evs);
     setState("playing");
-    tick(0, evs, data.log ?? []);
+    tick(0, evs, (data.log ?? []).map(String));
   }
 
   function tick(i: number, evs: Event[], rawLines: string[]) {
@@ -79,8 +78,9 @@ export default function ArenaPage() {
     }
 
     setLinesShown(ls => {
-      const nextLine = rawLines[Math.min(i, rawLines.length - 1)];
-      return [...ls, nextLine ?? JSON.stringify(ev)];
+      const raw = rawLines[Math.min(i, rawLines.length - 1)];
+      const text = typeof raw === "string" ? raw : JSON.stringify(raw);
+      return [...ls, text ?? JSON.stringify(ev)];
     });
 
     const delay = ev.t === "crit" ? 900 : ev.t === "hit" ? 650 : 450;
@@ -139,7 +139,9 @@ export default function ArenaPage() {
 
           <div className="card" style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}>
             {linesShown.map((line, idx) => (
-              <div key={idx} style={{ padding: 6, borderBottom: "1px solid #222" }}>{line}</div>
+              <div key={idx} style={{ padding: 6, borderBottom: "1px solid #222" }}>
+                {line}
+              </div>
             ))}
           </div>
 
