@@ -16,7 +16,7 @@ type Character = {
   wis: number;
   cha: number;
   con: number;
-  // luck pode ser adicionado aqui também quando colocarmos no banco
+  luck: number;
 };
 
 export default function DashboardPage() {
@@ -26,7 +26,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      // 1) verificar usuário
       const userResp = await supabase.auth.getUser();
       if (!userResp.data.user) {
         router.push("/login");
@@ -34,7 +33,6 @@ export default function DashboardPage() {
       }
       setEmail(userResp.data.user.email ?? null);
 
-      // 2) buscar profile para saber qual personagem está ativo
       const { data: profile } = await supabase
         .from("profiles")
         .select("active_character_id")
@@ -43,7 +41,6 @@ export default function DashboardPage() {
 
       if (!profile?.active_character_id) return;
 
-      // 3) carregar personagem ativo
       const { data: personagem } = await supabase
         .from("characters")
         .select("*")
@@ -77,6 +74,7 @@ export default function DashboardPage() {
             <li>Sabedoria: {char.wis}</li>
             <li>Carisma: {char.cha}</li>
             <li>Constituição: {char.con}</li>
+            <li>Sorte: {char.luck}</li>
           </ul>
         </div>
       ) : (
