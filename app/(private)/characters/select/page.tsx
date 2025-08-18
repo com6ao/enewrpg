@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 
 type Character = {
@@ -20,7 +19,7 @@ export default function SelectCharacterPage() {
   useEffect(() => {
     async function load() {
       const r = await fetch("/api/characters/list");
-      const data = await r.json();             // <- { characters: [...], active_character_id: ... }
+      const data = await r.json();
       setChars(data.characters ?? []);
       setActiveId(data.active_character_id ?? null);
       setLoading(false);
@@ -37,27 +36,51 @@ export default function SelectCharacterPage() {
     location.href = "/dashboard";
   }
 
+  async function deleteCharacter(id: string) {
+    const ok = confirm("Excluir este personagem? Esta ação não pode ser desfeita.");
+    if (!ok) return;
+    const r = await fetch("/api/characters/delete", {
+      method: "POST",
+      body: JSON.stringify({ character_id: id }),
+    });
+    if (!r.ok) { alert(await r.text()); return; }
+    setChars(prev => prev.filter(c => c.id !== id));
+    if (activeId === id) setActiveId(null);
+  }
+
   return (
     <main className="container">
       <h1>Selecionar Personagem</h1>
       {loading ? <p>carregando...</p> :
         chars.map((c) => (
-          <div key={c.id} className="card" style={{marginBottom:12}}>
+          <div key={c.id} className="card" style={{ marginBottom: 12 }}>
             <div className="card-title">
               {c.name} {c.surname}
-              {activeId === c.id && <span style={{color:"#2ecc71", marginLeft:6}}>(Ativo)</span>}
+              {activeId === c.id && <span style={{ color: "#2ecc71", marginLeft: 6 }}>(Ativo)</span>}
             </div>
             <div className="muted">{c.universe} · {c.energy} · Lv {c.lvl} · XP {c.xp}</div>
-            <button
-              className="btn"
-              disabled={activeId === c.id}
-              onClick={() => selectCharacter(c.id)}
-            >
-              {activeId === c.id ? "Selecionado" : "Selecionar"}
-            </button>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button
+                className="btn"
+                disabled={activeId === c.id}
+                onClick={() => selectCharacter(c.id)}
+              >
+                {activeId === c.id ? "Selecionado" : "Selecionar"}
+              </button>
+
+              <button
+                className="btn"
+                style={{ background: "#e74c3c" }}
+                onClick={() => deleteCharacter(c.id)}
+              >
+                Excluir
+              </button>
+            </div>
           </div>
         ))
       }
+      {(!loading && chars.length === 0) && <p>Nenhum personagem. Crie um novo.</p>}
     </main>
   );
 }
