@@ -1,7 +1,6 @@
-// app/api/battle/act/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
-import { applyEvent, toEvent } from "@/lib/battleServer";
+import { toEvent, applyEvent } from "@/lib/battleServer";
 
 export async function POST(req: Request) {
   const { battle_id, steps = 1 } = await req.json();
@@ -20,36 +19,23 @@ export async function POST(req: Request) {
   if (!bt) return new NextResponse("Batalha não encontrada", { status: 404 });
 
   if (bt.status === "finished") {
-    return NextResponse.json({
-      battle: {
-        id: bt.id, enemy_name: bt.enemy_name,
-        player_hp: bt.player_hp, player_hp_max: bt.player_hp_max,
-        enemy_hp: bt.enemy_hp, enemy_hp_max: bt.enemy_hp_max,
-        cursor: bt.cursor, status: bt.status, winner: bt.winner,
-      },
-      lines: [],
-    });
+    return NextResponse.json({ battle: bt, lines: [] });
   }
 
   const log: any[] = Array.isArray(bt.log) ? bt.log : [];
   const start = bt.cursor;
-  const end = Math.min(start + Math.max(1, Number(steps)), log.length);
+  const end = Math.min(start + Number(steps), log.length);
 
-  const shown: string[] = [];
-  let player_hp = bt.player_hp;
-  let enemy_hp = bt.enemy_hp;
+  const lines: string[] = [];
+  const state = { player_hp: bt.player_hp, enemy_hp: bt.enemy_hp };
 
   for (let i = start; i < end; i++) {
     const line = log[i];
-    shown.push(typeof line === "string" ? line : (line?.text ?? JSON.stringify(line)));
+    lines.push(typeof line === "string" ? line : (line?.text ?? JSON.stringify(line)));
     const ev = toEvent(line);
-    if (ev) applyEvent({ player_hp, enemy_hp } as any, ev);
-    // applyEvent muta, então recupere
-    player_hp = (applyEvent as any).last_player_hp ?? player_hp; // não precisamos disso se usarmos objeto
+    if (ev) applyEvent(state, ev);
   }
 
-  // fim seguro
-  const state = { player_hp, enemy_hp };
   const finished = end >= log.length || state.player_hp <= 0 || state.enemy_hp <= 0;
   const winner =
     finished
@@ -70,10 +56,9 @@ export async function POST(req: Request) {
       winner,
     })
     .eq("id", bt.id)
-    .select("id, enemy_name, player_hp, player_hp_max, enemy_hp, enemy_hp_max, cursor, status, winner")
-    .single();
+    .select("*").single();
 
   if (error) return new NextResponse(error.message, { status: 400 });
 
-  return NextResponse.json({ battle: updated, lines: shown });
+  return NextResponse.json({ battle: updated, lines });
 }
