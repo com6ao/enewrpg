@@ -34,11 +34,16 @@ export async function POST(req: Request) {
     wis: enemy.wis, cha: enemy.cha, con: enemy.con, luck: enemy.luck, name: enemy.name,
   };
 
-  // Resolve combate completo e salva no banco
   const outcome = await resolveCombat(playerAttrs, enemyAttrs);
-  const log = Array.isArray(outcome?.log) ? outcome.log : [];
-  const playerMax = outcome?.playerMaxHp ?? 100;
-  const enemyMax  = outcome?.enemyMaxHp  ?? 100;
+  const log = Array.isArray((outcome as any)?.log) ? (outcome as any).log : [];
+
+  // tenta obter hp do outcome, senão usa 100
+  const playerMax =
+    (outcome as any)?.playerMaxHp ??
+    (outcome as any)?.player?.hpMax ?? 100;
+  const enemyMax =
+    (outcome as any)?.enemyMaxHp ??
+    (outcome as any)?.enemy?.hpMax ?? 100;
 
   const { data: inserted, error } = await supabase
     .from("battles")
@@ -59,6 +64,5 @@ export async function POST(req: Request) {
     .select("*").single();
 
   if (error) return new NextResponse(error.message, { status: 400 });
-
   return NextResponse.json({ battle: inserted });
 }
