@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import HPBar from "@/components/HPBar";
+import HPBar from "../../components/HPBar";        // <- caminho corrigido
 import { parseLog, type Event } from "@/lib/combatLog";
 
 type Enemy = { id: string; name: string; level: number };
 type BattleResponse = {
   enemy: Enemy;
-  // o backend retorna ...result e log
-  result: any;           // não forçamos campos; lidamos com fallbacks
+  result: any;
   log: string[];
 };
 
@@ -39,7 +38,6 @@ export default function ArenaPage() {
     if (!r.ok) { alert(await r.text()); setState("idle"); return; }
     const data: BattleResponse = await r.json();
 
-    // fallbacks para HP inicial conforme estrutura disponível
     const playerMax =
       data.result?.playerMaxHp ??
       data.result?.player?.hpMax ??
