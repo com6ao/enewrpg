@@ -10,16 +10,17 @@ export async function POST(req: Request) {
   const { character_id } = await req.json();
   if (!character_id) return new NextResponse("character_id obrigatório", { status: 400 });
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies(); // <- importante
+
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) =>
-          cookieStore.set({ name, value, ...options })
-        );
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set({ name, value, ...options });
+        });
       },
     },
   });
