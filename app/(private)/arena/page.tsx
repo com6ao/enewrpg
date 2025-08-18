@@ -1,20 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import HPBar from "../../components/HPBar";        // <- caminho corrigido
+import HPBar from "../../components/HPBar";
 import { parseLog, type Event } from "@/lib/combatLog";
 
 type Enemy = { id: string; name: string; level: number };
-type BattleResponse = {
-  enemy: Enemy;
-  result: any;
-  log: string[];
-};
+type BattleResponse = { enemy: Enemy; result: any; log: string[] };
 
 export default function ArenaPage() {
-  const [area, setArea] =
-    useState<"creep" | "jungle" | "ancient" | "boss">("creep");
-  const [state, setState] =
-    useState<"idle" | "loading" | "playing" | "done">("idle");
+  const [area, setArea] = useState<"creep" | "jungle" | "ancient" | "boss">("creep");
+  const [state, setState] = useState<"idle" | "loading" | "playing" | "done">("idle");
 
   const [enemy, setEnemy] = useState<Enemy | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
@@ -38,6 +32,9 @@ export default function ArenaPage() {
     if (!r.ok) { alert(await r.text()); setState("idle"); return; }
     const data: BattleResponse = await r.json();
 
+    // DEBUG: resposta crua do backend
+    console.debug("BATTLE RESPONSE:", data);
+
     const playerMax =
       data.result?.playerMaxHp ??
       data.result?.player?.hpMax ??
@@ -60,6 +57,10 @@ export default function ArenaPage() {
       undefined;
 
     const evs = parseLog(data.log ?? [], winner);
+
+    // DEBUG: eventos derivados do log
+    console.debug("PARSED EVENTS:", evs);
+
     setEvents(evs);
     setState("playing");
     tick(0, evs, data.log ?? []);
