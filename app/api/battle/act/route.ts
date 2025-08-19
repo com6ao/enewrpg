@@ -26,14 +26,14 @@ export async function POST(req: Request) {
   const start = bt.cursor;
   const end = Math.min(start + Number(steps), log.length);
 
-  const lines: string[] = [];
+  const lines: any[] = [];
   const state = { player_hp: bt.player_hp, enemy_hp: bt.enemy_hp };
 
   for (let i = start; i < end; i++) {
     const line = log[i];
-    lines.push(typeof line === "string" ? line : (line?.text ?? JSON.stringify(line)));
-    const ev = toEvent(line);
-    if (ev) applyEvent(state, ev);
+    lines.push(line);                 // devolvemos o objeto original
+    const ev = toEvent(line);         // converte para evento simples
+    if (ev) applyEvent(state, ev);    // atualiza HPs
   }
 
   const finished = end >= log.length || state.player_hp <= 0 || state.enemy_hp <= 0;
