@@ -69,26 +69,22 @@ export default function ArenaPage() {
     setState("idle"); setBattle(null); setLines([]); setPlayerAttrs(null); setEnemyAttrs(null);
   }
 
-  // formata 1 linha do log, aceitando objeto rico ou string
   function formatLine(item: any): string {
     if (typeof item === "string") return item;
 
-    // campos comuns que alguns motores geram
-    const desc = item.description ?? item.text ?? "";
-    const dmg = item.damage ?? item.dmg ?? item.amount ?? null;
-    const dtype = item.damage_type ?? item.kind ?? item.type_detail ?? null;
+    const desc = item.description ?? "";
+    const dmg  = item.damage ?? item.dmg ?? item.amount ?? null;
+    const dtype = item.damage_type ?? item.kind ?? null;
 
-    // fórmula opcional: base/atk/def/crit/roll...
     const f = item.formula ?? item.calc ?? null;
     const parts: string[] = [];
     if (desc) parts.push(desc);
     if (dmg != null) parts.push(`Dano: ${dmg}${dtype ? ` (${dtype})` : ""}`);
     if (f && typeof f === "object") {
-      const kv = Object.entries(f).map(([k, v]) => `${k}:${v}`).join(", ");
+      const kv = [`atk:${f.atk}`, `def:${f.def}`, `base:${f.base}`, `crit:${!!f.crit}`, `mult:${f.mult}`, `rand:${f.rand}`]
+        .filter(Boolean).join(", ");
       parts.push(`Cálculo: ${kv}`);
     }
-
-    // alvo após ataque
     if (item.target_hp_after != null) parts.push(`HP alvo após: ${item.target_hp_after}`);
 
     return parts.filter(Boolean).join(" · ");
@@ -136,22 +132,14 @@ export default function ArenaPage() {
         <section className="card" style={{ display: "grid", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <h3>Você</h3>
-              </div>
+              <h3>Você</h3>
               <HPBar current={battle.player_hp} max={battle.player_hp_max} />
-              <div style={{ marginTop:8 }}>
-                <AttrBox title="Atributos" a={playerAttrs} />
-              </div>
+              <div style={{ marginTop:8 }}><AttrBox title="Atributos" a={playerAttrs} /></div>
             </div>
             <div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <h3>{battle.enemy_name}</h3>
-              </div>
+              <h3>{battle.enemy_name}</h3>
               <HPBar current={battle.enemy_hp} max={battle.enemy_hp_max} />
-              <div style={{ marginTop:8 }}>
-                <AttrBox title="Atributos" a={enemyAttrs} />
-              </div>
+              <div style={{ marginTop:8 }}><AttrBox title="Atributos" a={enemyAttrs} /></div>
             </div>
           </div>
 
@@ -165,6 +153,12 @@ export default function ArenaPage() {
                 {formatLine(line)}
               </div>
             ))}
+          </div>
+
+          {/* Legenda do cálculo */}
+          <div className="card" style={{ background:"#0e0e0e", padding: 10, fontSize: 12, color:"#bbb" }}>
+            <b>Legenda do cálculo:</b> atk = ataque, def = defesa, base = dano-base, crit = crítico,
+            mult = multiplicador do crítico, rand = fator aleatório.
           </div>
 
           {state === "done" && (
