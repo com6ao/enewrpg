@@ -1,3 +1,5 @@
+// lib/combat.ts
+
 export type Attrs = {
   str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; level: number;
 };
@@ -32,8 +34,23 @@ export function accuracyPercent(attacker: Attrs, defender: Attrs) {
   return Math.min(100, Math.max(0, base));
 }
 
+/**
+ * Resolver padrão: inicia com HP cheio (o do atributo).
+ */
 export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string }) {
-  let playerHP = calcHP(player);
+  return resolveCombatFromHP(player, enemy, calcHP(player));
+}
+
+/**
+ * Resolver que aceita **HP inicial do jogador** (não regenera entre lutas).
+ * Útil para o modo “coliseu”.
+ */
+export async function resolveCombatFromHP(
+  player: Attrs,
+  enemy: Attrs & { name: string },
+  playerHPStart: number
+) {
+  let playerHP = Math.max(1, Math.floor(playerHPStart));
   let enemyHP  = calcHP(enemy);
 
   let barP = 0, barE = 0;
@@ -67,7 +84,7 @@ export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string
       log.push({
         actor: "enemy",
         type: "action_complete",
-        // aqui o atacante é o inimigo: YOU -> nome do inimigo, TARGET -> Você
+        // atacante é o inimigo: YOU -> nome do inimigo, TARGET -> Você
         description: r.desc.replace("YOU", enemy.name).replace("TARGET", "Você"),
         damage: r.damage,
         damage_type: r.kind,
@@ -78,8 +95,11 @@ export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string
     }
   }
 
-  return { result: playerHP > 0 ? "win" : "lose", log };
+  const winner = playerHP > 0 ? "player" : "enemy";
+  return { playerHPFinal: playerHP, enemyHPFinal: enemyHP, log, winner };
 }
+
+/* ------------------------ motor de dano ------------------------ */
 
 function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
   if (Math.random() * 100 > accuracyPercent(attacker, defender)) {
@@ -112,8 +132,9 @@ function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
   const crit = Math.random() * 100 < critChance(attacker);
   const mult = crit ? 1.5 : 1;
 
-  let dmg = Math.max(1, Math.floor((base + rand) * mult) - Math.floor(def));
+  const defUsed = Math.floor(def);
+  const dmg = Math.max(1, Math.floor((base + rand) * mult) - defUsed);
   const desc = `YOU causou ${dmg} de dano em TARGET.`;
 
-  return { damage: dmg, kind, formula: { base, atk, def: Math.floor(def), rand, crit, mult }, desc };
+  return { damage: dmg, kind, formula: { base, atk, def: defUsed, rand, crit, mult }, desc };
 }
