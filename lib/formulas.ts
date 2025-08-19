@@ -1,51 +1,50 @@
 // lib/formulas.ts
 
-// ==== Tipos utilitários ====
-export type Attrs = {
+// Tipagem de atributos (a mesma usada no restante do projeto)
+export type Attr = {
   str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; level: number;
 };
 
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+// util
+export const clamp = (v:number, lo:number, hi:number) => Math.max(lo, Math.min(hi, v));
 
-// ==== Subatributos base (mantém sua lógica atual) ====
-export const calcHP = (a: Attrs) => 30 + a.level * 5 + a.con * 1;
-export const calcMP = (a: Attrs, main: number) => 30 + a.level * 5 + main + (a.con * 0.5);
+// -------------------- Subatributos básicos --------------------
+export const hp  = (a: Attr) => 30 + a.level * 5 + a.con * 1;
+export const mp  = (a: Attr, main:number) => 30 + a.level * 5 + main + a.con * 0.5;
 
-export const meleeAttack   = (a: Attrs) => a.str + Math.floor(a.dex * 0.5);
-export const rangedAttack  = (a: Attrs) => a.dex + Math.floor(a.str * 0.5);
-export const magicAttack   = (a: Attrs) => a.intt;
-export const mentalAttack  = (a: Attrs) => a.wis;
+export const atkSpeed  = (a: Attr) => a.dex;
+export const castSpeed = (a: Attr) => a.wis;
 
-export const resistPhysicalMelee   = (a: Attrs) => a.str + Math.floor(a.con * 0.5);
-export const resistPhysicalRanged  = (a: Attrs) => a.dex + Math.floor(a.con * 0.5);
-export const resistMagic           = (a: Attrs) => a.intt + Math.floor(a.con * 0.5);
-export const resistMental          = (a: Attrs) => a.wis + Math.floor(a.con * 0.5);
+// -------------------- Resistências --------------------
+export const resistPhysicalMelee  = (a: Attr) => a.str + a.con * 0.5;
+export const resistPhysicalRanged = (a: Attr) => a.dex + a.con * 0.5;
+export const resistMagic          = (a: Attr) => a.intt + a.con * 0.5;
+export const resistMental         = (a: Attr) => a.wis  + a.con * 0.5;
 
-export const atkSpeed  = (a: Attrs) => a.dex;
-export const castSpeed = (a: Attrs) => a.wis;
+// -------------------- Chances --------------------
+export const dodgeChance = (a: Attr) => a.luck + a.dex * 0.5;
+export const critChance  = (a: Attr) => a.luck;
 
-export const dodgeChance = (a: Attrs) => a.luck + Math.floor(a.dex * 0.5);
+// -------------------- Ataques base --------------------
+export const physicalMeleeAttack   = (a: Attr) => a.str + a.dex * 0.5;
+export const physicalRangedAttack  = (a: Attr) => a.dex + a.str * 0.5;
+export const magicAttack           = (a: Attr) => a.intt;
+export const mentalAttack          = (a: Attr) => a.wis;
 
-// crítico/ofensa/defesa de crítico (seu padrão atual)
-export const critChance    = (a: Attrs) => a.luck;          // %
-export const critMultiplier = (a: Attrs) => (a.cha / 20) + 1;// x
-export const critDefense   = (a: Attrs) => a.cha;           // %
-
-export const trueDamageChance       = (a: Attrs) => a.wis;  // %
-export const damageReductionChance  = (a: Attrs) => a.cha;  // %
-
-/** Precisão (mantém sua ideia: level e maior atributo pesam) */
-export function accuracyPercent(attacker: Attrs, defender: Attrs) {
-  const atkMain = Math.max(attacker.str, attacker.dex, attacker.intt);
-  const defMain = Math.max(defender.str, defender.dex, defender.intt);
-  let acc = 100 + (attacker.level - defender.level) * 5 + (atkMain - defMain) * 2;
+// -------------------- Precisão --------------------
+export function accuracyPercent(attacker: Attr, defender: Attr) {
+  const mainAtk = Math.max(attacker.str, attacker.dex, attacker.intt);
+  const mainDef = Math.max(defender.str, defender.dex, defender.intt);
+  let acc = 100 + (attacker.level - defender.level) * 5 + (mainAtk - mainDef) * 2;
   return clamp(acc, 0, 100);
 }
 
-// ==== (NOVO) Escala simples de inimigo por TIER ====
-// Regra: +15% por tier acima do 1 (arredondando para baixo).
-// Ex.: tier=1 => f = 1.00 | tier=2 => 1.15 | tier=3 => 1.30 ...
-export function scaleEnemy(base: Attrs, tier: number): Attrs {
+// -------------------- Util de dano --------------------
+export const damageClamp = (x:number) => clamp(Math.floor(x), 1, 9999);
+
+// -------------------- ESCALA DE INIMIGO POR TIER --------------------
+// +15% por tier acima de 1 (arredondando para baixo). Sobe também o level.
+export function scaleEnemy(base: Attr, tier: number): Attr {
   const t = Math.max(1, Math.floor(tier || 1));
   const f = 1 + (t - 1) * 0.15;
 
