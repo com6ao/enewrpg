@@ -1,10 +1,3 @@
-// lib/combat.ts
-import {
-  hp as calcHP, atkSpeed, resistPhysicalMelee, resistMagic, resistMental,
-  physicalMeleeAttack, physicalRangedAttack, magicAttack, mentalAttack,
-  accuracyPercent, dodgeChance, critChance, damageClamp,
-} from "./formulas";
-
 export type Attrs = {
   str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; level: number;
 };
@@ -19,9 +12,28 @@ export type BattleLogEntry = {
   target_hp_after: number;
 };
 
-// -------------------- motor interno --------------------
-function runTurnBasedCombat(initialPlayerHP: number, player: Attrs, enemy: Attrs & { name: string }) {
-  let playerHP = Math.max(1, Math.floor(initialPlayerHP));
+export function calcHP(c: Attrs) { return 30 + c.level * 5 + c.con * 1; }
+export function atkSpeed(c: Attrs) { return c.dex; }
+export function resistPhysicalMelee(c: Attrs) { return c.str + c.con * 0.5; }
+export function resistPhysicalRanged(c: Attrs) { return c.dex + c.con * 0.5; }
+export function resistMagic(c: Attrs) { return c.intt + c.con * 0.5; }
+export function resistMental(c: Attrs) { return c.wis + c.con * 0.5; }
+export function dodgeChance(c: Attrs) { return c.luck + c.dex * 0.5; }
+export function critChance(c: Attrs)  { return c.luck; }
+export function physicalMeleeAttack(c: Attrs) { return c.str + c.dex * 0.5; }
+export function physicalRangedAttack(c: Attrs) { return c.dex + c.str * 0.5; }
+export function magicAttack(c: Attrs) { return c.intt; }
+export function mentalAttack(c: Attrs) { return c.wis; }
+
+export function accuracyPercent(attacker: Attrs, defender: Attrs) {
+  const mainAtk = Math.max(attacker.str, attacker.dex, attacker.intt);
+  const mainDef = Math.max(defender.str, defender.dex, defender.intt);
+  let base = 100 + (attacker.level - defender.level) * 5 + (mainAtk - mainDef) * 2;
+  return Math.min(100, Math.max(0, base));
+}
+
+export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string }) {
+  let playerHP = calcHP(player);
   let enemyHP  = calcHP(enemy);
 
   let barP = 0, barE = 0;
@@ -55,6 +67,7 @@ function runTurnBasedCombat(initialPlayerHP: number, player: Attrs, enemy: Attrs
       log.push({
         actor: "enemy",
         type: "action_complete",
+        // aqui o atacante é o inimigo: YOU -> nome do inimigo, TARGET -> Você
         description: r.desc.replace("YOU", enemy.name).replace("TARGET", "Você"),
         damage: r.damage,
         damage_type: r.kind,
@@ -65,46 +78,19 @@ function runTurnBasedCombat(initialPlayerHP: number, player: Attrs, enemy: Attrs
     }
   }
 
-  const winner = playerHP > 0 ? "player" : "enemy";
-  return { playerHPFinal: playerHP, enemyHPFinal: enemyHP, winner, log };
+  return { result: playerHP > 0 ? "win" : "lose", log };
 }
 
-// -------------------- APIs públicas --------------------
-
-// HP cheio dos dois (como já usávamos)
-export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string }) {
-  const initial = calcHP(player);
-  return runTurnBasedCombat(initial, player, enemy);
-}
-
-// NOVO: não regenera HP do player (para coliseu/tier em sequência)
-export async function resolveCombatFromHP(
-  player: Attrs,
-  enemy: Attrs & { name: string },
-  playerHPStart: number
-) {
-  return runTurnBasedCombat(playerHPStart, player, enemy);
-}
-
-// -------------------- cálculo do golpe --------------------
 function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
-  // errou
   if (Math.random() * 100 > accuracyPercent(attacker, defender)) {
-    return {
-      damage: 0 as const,
-      kind: "physical" as const,
+    return { damage: 0, kind: "physical" as const,
       formula: { base:0, atk:0, def:0, rand:0, crit:false, mult:1 },
-      desc: "YOU errou o ataque.",
-    };
+      desc: "YOU errou o ataque." };
   }
-  // alvo desviou
   if (Math.random() * 100 < dodgeChance(defender)) {
-    return {
-      damage: 0 as const,
-      kind: "physical" as const,
+    return { damage: 0, kind: "physical" as const,
       formula: { base:0, atk:0, def:0, rand:0, crit:false, mult:1 },
-      desc: "TARGET desviou do ataque de YOU.",
-    };
+      desc: "TARGET desviou do ataque de YOU." };
   }
 
   const atkPhysical = Math.max(physicalMeleeAttack(attacker), physicalRangedAttack(attacker));
@@ -126,13 +112,8 @@ function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
   const crit = Math.random() * 100 < critChance(attacker);
   const mult = crit ? 1.5 : 1;
 
-  const raw = (base + rand) * mult - Math.floor(def);
-  const dmg = damageClamp(raw);
+  let dmg = Math.max(1, Math.floor((base + rand) * mult) - Math.floor(def));
+  const desc = `YOU causou ${dmg} de dano em TARGET.`;
 
-  return {
-    damage: dmg,
-    kind,
-    formula: { base, atk, def: Math.floor(def), rand, crit, mult },
-    desc: `YOU causou ${dmg} de dano em TARGET.`,
-  };
+  return { damage: dmg, kind, formula: { base, atk, def: Math.floor(def), rand, crit, mult }, desc };
 }

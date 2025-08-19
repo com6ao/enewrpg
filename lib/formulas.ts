@@ -1,61 +1,38 @@
 // lib/formulas.ts
+export type Attr = {str:number,dex:number,intt:number,wis:number,cha:number,con:number};
+export type LevelPack = {level:number};
+const clamp = (v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 
-// Tipagem de atributos (a mesma usada no restante do projeto)
-export type Attr = {
-  str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; level: number;
-};
+export const hp = (a:Attr,l:LevelPack)=> 30 + (l.level-1)*5 + a.con*1;
+export const mpMain = (a:Attr,l:LevelPack,main:'str'|'dex'|'intt')=> 30 + (l.level-1)*5 + a[main] + Math.floor(a.con*0.5);
 
-// util
-export const clamp = (v:number, lo:number, hi:number) => Math.max(lo, Math.min(hi, v));
+export const meleeAttack = (a:Attr)=> a.str + Math.floor(a.dex*0.5);
+export const rangedAttack= (a:Attr)=> a.dex + Math.floor(a.str*0.5);
+export const magicAttack = (a:Attr)=> a.intt;
 
-// -------------------- Subatributos básicos --------------------
-export const hp  = (a: Attr) => 30 + a.level * 5 + a.con * 1;
-export const mp  = (a: Attr, main:number) => 30 + a.level * 5 + main + a.con * 0.5;
+export const resistPhysicalMelee =(a:Attr)=> a.str + Math.floor(a.dex*0.5) + a.con;
+export const resistPhysicalRanged=(a:Attr)=> a.dex + Math.floor(a.str*0.5) + a.con;
+export const resistMagic       =(a:Attr)=> a.intt + a.con;
+export const resistMental      =(a:Attr)=> a.wis  + a.con;
+export const resistCrit        =(a:Attr)=> a.cha;
 
-export const atkSpeed  = (a: Attr) => a.dex;
-export const castSpeed = (a: Attr) => a.wis;
+export const attackSpeed=(a:Attr)=>a.dex;
+export const castSpeed  =(a:Attr)=>a.wis;
 
-// -------------------- Resistências --------------------
-export const resistPhysicalMelee  = (a: Attr) => a.str + a.con * 0.5;
-export const resistPhysicalRanged = (a: Attr) => a.dex + a.con * 0.5;
-export const resistMagic          = (a: Attr) => a.intt + a.con * 0.5;
-export const resistMental         = (a: Attr) => a.wis  + a.con * 0.5;
+export const critChance =(a:Attr)=>clamp(a.dex*2,0,60);         // %
+export const critMultiplier=(a:Attr)=>150 + Math.floor(a.cha*1.5); // %
+export const trueDamageChance=(a:Attr)=>clamp(a.wis*2,0,50);    // %
+export const damageReductionChance=(a:Attr)=>clamp(a.cha*2,0,60); // %
+export const damageReductionPercent=80;
 
-// -------------------- Chances --------------------
-export const dodgeChance = (a: Attr) => a.luck + a.dex * 0.5;
-export const critChance  = (a: Attr) => a.luck;
-
-// -------------------- Ataques base --------------------
-export const physicalMeleeAttack   = (a: Attr) => a.str + a.dex * 0.5;
-export const physicalRangedAttack  = (a: Attr) => a.dex + a.str * 0.5;
-export const magicAttack           = (a: Attr) => a.intt;
-export const mentalAttack          = (a: Attr) => a.wis;
-
-// -------------------- Precisão --------------------
-export function accuracyPercent(attacker: Attr, defender: Attr) {
-  const mainAtk = Math.max(attacker.str, attacker.dex, attacker.intt);
-  const mainDef = Math.max(defender.str, defender.dex, defender.intt);
-  let acc = 100 + (attacker.level - defender.level) * 5 + (mainAtk - mainDef) * 2;
-  return clamp(acc, 0, 100);
+export function dodgeChance(a:Attr){
+  const luck = Math.floor(a.cha/2); // suposição
+  return clamp(luck + Math.floor(a.dex*0.5),0,95);
+}
+export function accuracyPercent(atkLv:number,defLv:number,atkMax:number,defMax:number){
+  let acc=100;
+  if(defLv>atkLv) acc -= (defLv-atkLv)*5;
+  if(defMax>atkMax) acc -= (defMax-atkMax)*2;
+  return clamp(acc,5,100);
 }
 
-// -------------------- Util de dano --------------------
-export const damageClamp = (x:number) => clamp(Math.floor(x), 1, 9999);
-
-// -------------------- ESCALA DE INIMIGO POR TIER --------------------
-// +15% por tier acima de 1 (arredondando para baixo). Sobe também o level.
-export function scaleEnemy(base: Attr, tier: number): Attr {
-  const t = Math.max(1, Math.floor(tier || 1));
-  const f = 1 + (t - 1) * 0.15;
-
-  return {
-    level: base.level + (t - 1),
-    str:  Math.floor(base.str  * f),
-    dex:  Math.floor(base.dex  * f),
-    intt: Math.floor(base.intt * f),
-    wis:  Math.floor(base.wis  * f),
-    cha:  Math.floor(base.cha  * f),
-    con:  Math.floor(base.con  * f),
-    luck: Math.floor(base.luck * f),
-  };
-}

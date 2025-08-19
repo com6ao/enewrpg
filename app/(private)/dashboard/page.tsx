@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
@@ -16,50 +17,76 @@ const supabase = createClient(
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
   const [char, setChar] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/login"); return; }
+      const { data: session } = await supabase.auth.getUser();
+      const user = session?.user ?? null;
 
-      // perfil -> personagem ativo
+      if (!user) { router.push("/login"); return; }
+      setEmail(user.email ?? null);
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("active_character_id")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profile?.active_character_id) { setLoading(false); return; }
+      if (!profile?.active_character_id) {
+        // logado, porém sem personagem ativo
+        setChar(null);
+        setLoading(false);
+        return;
+      }
 
-      const { data } = await supabase
+      const { data: personagem } = await supabase
         .from("characters")
-        .select("*")
+        .select("id,name,surname,level,xp,str,dex,intt,wis,cha,con,luck")
         .eq("id", profile.active_character_id)
         .maybeSingle();
 
-      setChar(data as Character | null);
+      setChar(personagem as any);
       setLoading(false);
     })();
   }, [router]);
 
-  if (loading) return <main className="container">carregando…</main>;
-  if (!char) return <main className="container">Nenhum personagem ativo.</main>;
+  async function logout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  if (loading) return <main className="container"><p>Carregando...</p></main>;
 
   return (
     <main className="container">
       <h1>Status do Personagem</h1>
-      <p><b>{char.name} {char.surname}</b> — Lv {char.level} / XP {char.xp}</p>
-      <ul style={{ lineHeight: 1.5 }}>
-        <li>Força: {char.str}</li>
-        <li>Destreza: {char.dex}</li>
-        <li>Inteligência: {char.intt}</li>
-        <li>Sabedoria: {char.wis}</li>
-        <li>Carisma: {char.cha}</li>
-        <li>Constituição: {char.con}</li>
-        <li><b>Sorte: {char.luck}</b></li> {/* <- agora imprime o valor correto */}
-      </ul>
+      <p>Usuário: {email}</p>
+      <button className="btn" onClick={logout}>Sair</button>
+
+      {char ? (
+        <div style={{ marginTop: 20 }}>
+          <h3>{char.name} — Lv {char.level} / XP {char.xp}</h3>
+          <ul>
+            <li>Força: {char.str}</li>
+            <li>Destreza: {char.dex}</li>
+            <li>Inteligência: {char.intt}</li>
+            <li>Sabedoria: {char.wis}</li>
+            <li>Carisma: {char.cha}</li>
+            <li>Constituição: {char.con}</li>
+            <li>Sorte: {char.luck}</li>
+          </ul>
+        </div>
+      ) : (
+        <div style={{ marginTop: 20 }}>
+          <p>Nenhum personagem ativo.</p>
+          <button className="btn" onClick={() => router.push("/characters/select")}>
+            Selecionar / Criar personagem
+          </button>
+        </div>
+      )}
     </main>
   );
 }
