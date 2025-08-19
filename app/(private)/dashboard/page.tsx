@@ -5,11 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
 type Character = {
-  id: string;
-  name: string;
-  surname: string;
-  level: number;
-  xp: number;
+  id: string; name: string; surname: string;
+  level: number; xp: number;
   str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number;
 };
 
@@ -22,10 +19,13 @@ export default function DashboardPage() {
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [char, setChar] = useState<Character | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: session } = await supabase.auth.getUser();
+      const user = session?.user ?? null;
+
       if (!user) { router.push("/login"); return; }
       setEmail(user.email ?? null);
 
@@ -35,27 +35,35 @@ export default function DashboardPage() {
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profile?.active_character_id) { setChar(null); return; }
+      if (!profile?.active_character_id) {
+        // logado, porém sem personagem ativo
+        setChar(null);
+        setLoading(false);
+        return;
+      }
 
       const { data: personagem } = await supabase
         .from("characters")
-        .select("id,name,surname,level,xp,str,dex,intt,wis,cha,con,luck") // inclui luck
+        .select("id,name,surname,level,xp,str,dex,intt,wis,cha,con,luck")
         .eq("id", profile.active_character_id)
         .maybeSingle();
 
       setChar(personagem as any);
+      setLoading(false);
     })();
   }, [router]);
 
   async function logout() {
     await supabase.auth.signOut();
-    router.push("/");
+    router.push("/login");
   }
+
+  if (loading) return <main className="container"><p>Carregando...</p></main>;
 
   return (
     <main className="container">
       <h1>Status do Personagem</h1>
-      <p>Usuário: {email ?? "carregando..."}</p>
+      <p>Usuário: {email}</p>
       <button className="btn" onClick={logout}>Sair</button>
 
       {char ? (
@@ -72,7 +80,12 @@ export default function DashboardPage() {
           </ul>
         </div>
       ) : (
-        <p style={{ marginTop: 20 }}>Nenhum personagem ativo. Vá em “Personagens” e selecione um.</p>
+        <div style={{ marginTop: 20 }}>
+          <p>Nenhum personagem ativo.</p>
+          <button className="btn" onClick={() => router.push("/characters/select")}>
+            Selecionar / Criar personagem
+          </button>
+        </div>
       )}
     </main>
   );
