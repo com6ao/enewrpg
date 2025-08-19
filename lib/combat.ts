@@ -14,6 +14,7 @@ export type BattleLogEntry = {
   target_hp_after: number;
 };
 
+// ---- Subatributos de combate (compatíveis com suas fórmulas) ----
 export function calcHP(c: Attrs) { return 30 + c.level * 5 + c.con * 1; }
 export function atkSpeed(c: Attrs) { return c.dex; }
 export function resistPhysicalMelee(c: Attrs) { return c.str + c.con * 0.5; }
@@ -34,23 +35,18 @@ export function accuracyPercent(attacker: Attrs, defender: Attrs) {
   return Math.min(100, Math.max(0, base));
 }
 
-/**
- * Resolver padrão: inicia com HP cheio (o do atributo).
- */
+// ---- Loop padrão (HP cheio do jogador) ----
 export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string }) {
-  return resolveCombatFromHP(player, enemy, calcHP(player));
+  return resolveCombatFromHP(player, enemy, /*playerHPStart*/ calcHP(player));
 }
 
-/**
- * Resolver que aceita **HP inicial do jogador** (não regenera entre lutas).
- * Útil para o modo “coliseu”.
- */
+// ---- (NOVO) Loop aceitando HP inicial do jogador (torneio/coliseu) ----
 export async function resolveCombatFromHP(
   player: Attrs,
   enemy: Attrs & { name: string },
   playerHPStart: number
 ) {
-  let playerHP = Math.max(1, Math.floor(playerHPStart));
+  let playerHP = Math.max(1, Math.floor(playerHPStart)); // <- não regenera
   let enemyHP  = calcHP(enemy);
 
   let barP = 0, barE = 0;
@@ -95,12 +91,15 @@ export async function resolveCombatFromHP(
     }
   }
 
-  const winner = playerHP > 0 ? "player" : "enemy";
-  return { playerHPFinal: playerHP, enemyHPFinal: enemyHP, log, winner };
+  return {
+    playerHPFinal: playerHP,
+    enemyHPFinal: enemyHP,
+    winner: playerHP > 0 ? "player" : "enemy",
+    log,
+  };
 }
 
-/* ------------------------ motor de dano ------------------------ */
-
+// ---- Core do ataque ----
 function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
   if (Math.random() * 100 > accuracyPercent(attacker, defender)) {
     return { damage: 0, kind: "physical" as const,
@@ -132,9 +131,8 @@ function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
   const crit = Math.random() * 100 < critChance(attacker);
   const mult = crit ? 1.5 : 1;
 
-  const defUsed = Math.floor(def);
-  const dmg = Math.max(1, Math.floor((base + rand) * mult) - defUsed);
+  let dmg = Math.max(1, Math.floor((base + rand) * mult) - Math.floor(def));
   const desc = `YOU causou ${dmg} de dano em TARGET.`;
 
-  return { damage: dmg, kind, formula: { base, atk, def: defUsed, rand, crit, mult }, desc };
+  return { damage: dmg, kind, formula: { base, atk, def: Math.floor(def), rand, crit, mult }, desc };
 }
