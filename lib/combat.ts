@@ -13,7 +13,7 @@ export type BattleLogEntry = {
 };
 
 export function calcHP(c: Attrs) { return 30 + c.level * 5 + c.con * 1; }
-export function atkSpeed(c: Attrs) { return c.dex; }
+export function atkSpeed(c: Attrs) { return Math.max(c.dex, c.wis); }
 export function resistPhysicalMelee(c: Attrs) { return c.str + c.con * 0.5; }
 export function resistPhysicalRanged(c: Attrs) { return c.dex + c.con * 0.5; }
 export function resistMagic(c: Attrs) { return c.intt + c.con * 0.5; }
