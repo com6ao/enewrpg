@@ -1,329 +1,404 @@
+// app/(private)/layout.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import AuthGuard from "@/app/components/AuthGuard";
+import { createBrowserClient } from "@supabase/ssr";
 
-/* ---------------------------- Tipos de Equipamentos ---------------------------- */
-type EquipSlot =
-  | "head"
-  | "amulet"
-  | "weapon"
-  | "offhand"
-  | "ring"
-  | "chest"
-  | "legs"
-  | "boots";
-
-type Equip = {
-  [K in EquipSlot]?: { name: string; rarity?: "common" | "rare" | "epic" };
+type Character = {
+  id: string;
+  name: string;
+  surname: string;
+  level: number;
+  xp: number;
+  str: number;
+  dex: number;
+  intt: number;
+  wis: number;
+  cha: number;
+  con: number;
+  luck: number;
 };
 
-/* ------------------------------- Cards auxiliares ------------------------------- */
-
-function ItemsCard() {
-  return (
-    <section className="card" style={{ padding: 12 }}>
-      <h3 style={{ marginBottom: 8 }}>Itens</h3>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-          gap: 8,
-        }}
-      >
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div
-            key={i}
-            title="Vazio"
-            style={{
-              height: 54,
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,.06)",
-              background:
-                "linear-gradient(180deg, rgba(31,41,55,.55), rgba(17,24,39,.55))",
-              boxShadow:
-                "0 1px 0 rgba(255,255,255,.04) inset, 0 6px 12px rgba(0,0,0,.25)",
-            }}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ShopCard() {
-  return (
-    <section className="card" style={{ padding: 12 }}>
-      <h3 style={{ marginBottom: 8 }}>Loja</h3>
-      <div style={{ display: "grid", gap: 8 }}>
-        <button className="btn">Loja NPC</button>
-        <button className="btn" style={{ background: "#3b82f6" }}>
-          Mercado
-        </button>
-      </div>
-    </section>
-  );
-}
-
-/* --------------------------- Card de Equipamentos (novo) --------------------------- */
-
-function EquipmentCard({ equip }: { equip: Equip }) {
-  // ordem e posição dos slots ao redor do avatar
-  const slots: { k: EquipSlot; label: string; area: string }[] = [
-    { k: "head", label: "Elmo", area: "head" },
-    { k: "amulet", label: "Amuleto", area: "amulet" },
-    { k: "weapon", label: "Arma", area: "weapon" },
-    { k: "chest", label: "Peitoral", area: "chest" },
-    { k: "offhand", label: "Escudo", area: "off" },
-    { k: "ring", label: "Anel", area: "ring" },
-    { k: "legs", label: "Calças", area: "legs" },
-    { k: "boots", label: "Botas", area: "boots" },
-  ];
-
-  return (
-    <section className="card eq-card">
-      <div className="eq-header">
-        <h3>Equipamentos</h3>
-        <span className="badge">CB 4276</span>
-      </div>
-
-      <div className="eq-grid">
-        {/* Avatar */}
-        <div className="avatar" aria-hidden>
-          <div className="silhouette" />
-        </div>
-
-        {/* Slots */}
-        {slots.map((s) => (
-          <button key={s.k} className={`slot ${s.area}`} title={s.label}>
-            <span className="slot-title">{equip[s.k]?.name ?? s.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* estilos locais do card */}
-      <style jsx>{`
-        .eq-card {
-          padding: 12px;
-          backdrop-filter: blur(6px);
-          background: linear-gradient(
-            180deg,
-            rgba(255, 255, 255, 0.04),
-            rgba(0, 0, 0, 0.15)
-          );
-          border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .eq-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin-bottom: 10px;
-        }
-        .badge {
-          font-size: 12px;
-          padding: 2px 8px;
-          border-radius: 999px;
-          background: #1f2937;
-          color: #e5e7eb;
-          border: 1px solid #2b3442;
-        }
-        .eq-grid {
-          display: grid;
-          grid-template-areas:
-            ".      head    amulet   .     "
-            "weapon avatar  avatar   off   "
-            "ring   avatar  avatar   chest "
-            ".      legs    boots    .     ";
-          grid-template-columns: repeat(4, 1fr);
-          grid-template-rows: 56px 72px 72px 56px;
-          gap: 8px;
-        }
-        .avatar {
-          grid-area: avatar;
-          position: relative;
-          border-radius: 12px;
-          background: radial-gradient(
-            120px 140px at 50% 20%,
-            rgba(255, 255, 255, 0.06),
-            rgba(0, 0, 0, 0.2)
-          );
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 140px;
-        }
-        .silhouette {
-          width: 60%;
-          height: 80%;
-          border-radius: 8px;
-          background: linear-gradient(180deg, #1f2937 20%, #0f172a 100%);
-          mask: radial-gradient(circle at 50% 15%, transparent 22%, black 23%)
-              top/100% 30% no-repeat,
-            linear-gradient(transparent 38%, black 39%) center/100% 100%
-              no-repeat;
-          opacity: 0.6;
-        }
-        .slot {
-          border-radius: 10px;
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          background: linear-gradient(
-            180deg,
-            rgba(31, 41, 55, 0.55),
-            rgba(17, 24, 39, 0.55)
-          );
-          color: #e5e7eb;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 6px;
-          transition: transform 0.12s ease, box-shadow 0.12s ease,
-            border-color 0.12s ease;
-          box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
-            0 6px 12px rgba(0, 0, 0, 0.25);
-        }
-        .slot:hover {
-          transform: translateY(-1px);
-          border-color: #3b82f6;
-          box-shadow: 0 8px 18px rgba(59, 130, 246, 0.12);
-        }
-        .slot-title {
-          font-size: 12px;
-          text-align: center;
-          line-height: 1.1;
-        }
-        .head {
-          grid-area: head;
-        }
-        .amulet {
-          grid-area: amulet;
-        }
-        .weapon {
-          grid-area: weapon;
-        }
-        .off {
-          grid-area: off;
-        }
-        .ring {
-          grid-area: ring;
-        }
-        .chest {
-          grid-area: chest;
-        }
-        .legs {
-          grid-area: legs;
-        }
-        .boots {
-          grid-area: boots;
-        }
-
-        @media (max-width: 640px) {
-          .eq-grid {
-            grid-template-areas:
-              "head   amulet  weapon  off"
-              "ring   chest   legs    boots"
-              "avatar avatar  avatar  avatar";
-            grid-template-rows: 56px 56px 160px;
-          }
-          .avatar {
-            min-height: 160px;
-          }
-        }
-      `}</style>
-    </section>
-  );
-}
-
-/* ---------------------------------- Layout ---------------------------------- */
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function PrivateLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [shopView, setShopView] = useState<null | "npc" | "market">(null);
 
+  const [loadingChar, setLoadingChar] = useState(true);
+  const [char, setChar] = useState<Character | null>(null);
+
+  // Responsivo: sidebar cai para baixo em telas estreitas
   useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth < 1024);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const update = () => setNarrow(window.innerWidth < 1024);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, []);
 
-  // largura calculada da sidebar
-  const sidebarWidth = narrow ? "100%" : collapsed ? 56 : 260;
+  // Carrega personagem ativo para PC/slots
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+        if (!user) {
+          setLoadingChar(false);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("active_character_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!profile?.active_character_id) {
+          setChar(null);
+          setLoadingChar(false);
+          return;
+        }
+
+        const { data: personagem } = await supabase
+          .from("characters")
+          .select(
+            "id,name,surname,level,xp,str,dex,intt,wis,cha,con,luck"
+          )
+          .eq("id", profile.active_character_id)
+          .maybeSingle();
+
+        setChar(personagem as Character | null);
+      } finally {
+        setLoadingChar(false);
+      }
+    })();
+  }, []);
+
+  // --- Poder de Combate (PC) ---
+  function computePC(c: Character | null) {
+    if (!c) return 0;
+    const sum =
+      c.str + c.dex + c.intt + c.wis + c.cha + c.con + c.luck;
+    return sum * Math.max(1, c.level);
+  }
+
+  const pc = useMemo(() => computePC(char), [char]);
+
+  const pcTooltip = useMemo(() => {
+    if (!char)
+      return "PC: requer personagem ativo.\nFórmula: (STR+DEX+INT+WIS+CHA+CON+LUCK) × LEVEL";
+    const parts = [
+      `STR:${char.str}`,
+      `DEX:${char.dex}`,
+      `INT:${char.intt}`,
+      `WIS:${char.wis}`,
+      `CHA:${char.cha}`,
+      `CON:${char.con}`,
+      `LUCK:${char.luck}`,
+    ];
+    const sum =
+      char.str +
+      char.dex +
+      char.intt +
+      char.wis +
+      char.cha +
+      char.con +
+      char.luck;
+    return `PC = (${parts.join(" + ")}) × LEVEL(${char.level}) = ${sum} × ${
+      char.level
+    } = ${computePC(char)}`;
+  }, [char]);
+
+  // Layout / estilos utilitários
+  const asideWidth = narrow ? "100%" : (collapsed ? 56 : 300);
+  const containerStyle: React.CSSProperties = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 12,
+    padding: 12,
+  };
+
+  const asideStyle: React.CSSProperties = {
+    order: narrow ? 2 : 0,             // em telas estreitas: vai para baixo
+    flexBasis: narrow ? "100%" : undefined,
+    width: asideWidth,
+    background: "linear-gradient(180deg, rgba(6,10,20,.8), rgba(10,14,24,.8))",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 14,
+    padding: collapsed ? 8 : 12,
+    position: "relative",
+  };
+
+  const cardStyle: React.CSSProperties = {
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    padding: 12,
+  };
+
+  const titleStyle: React.CSSProperties = {
+    fontWeight: 700,
+    opacity: 0.95,
+    marginBottom: 8,
+  };
+
+  const badgeStyle: React.CSSProperties = {
+    fontSize: 12,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(80,120,255,.15)",
+    border: "1px solid rgba(80,120,255,.35)",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+  };
+
+  const slotBase: React.CSSProperties = {
+    height: 56,
+    borderRadius: 10,
+    background: "rgba(255,255,255,0.03)",
+    border: "1px dashed rgba(255,255,255,0.16)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 12,
+    color: "#aab",
+  };
 
   return (
     <AuthGuard>
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "flex-start",
-        }}
-      >
-        {/* SIDEBAR (esquerda; cai para baixo no mobile) */}
-        <aside
-          style={{
-            order: narrow ? 2 : 0,
-            flex: narrow ? "1 1 100%" : "0 0 auto",
-            width: sidebarWidth,
-            maxWidth: sidebarWidth,
-            background:
-              "linear-gradient(180deg, rgba(2,6,23,.8), rgba(2,6,23,.5))",
-            border: "1px solid rgba(148,163,184,.08)",
-            boxShadow: "0 10px 30px rgba(0,0,0,.25)",
-            borderRadius: 10,
-            padding: 10,
-            position: narrow ? "relative" : "sticky",
-            top: narrow ? undefined : 12,
-          }}
-        >
-          {/* header da sidebar */}
-          <div
+      <div style={containerStyle}>
+        {/* SIDEBAR ESQUERDA */}
+        <aside style={asideStyle}>
+          {/* Botão colapsar */}
+          <button
+            aria-label="Minimizar"
+            onClick={() => setCollapsed((v) => !v)}
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 10,
+              position: "absolute",
+              top: 8,
+              right: 8,
+              height: 28,
+              width: 28,
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.07)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#ccd",
+              fontSize: 14,
+              cursor: "pointer",
             }}
+            title={collapsed ? "Expandir painel" : "Minimizar painel"}
           >
-            <strong style={{ opacity: 0.9 }}>Painel</strong>
-            <button
-              className="btn"
-              onClick={() => setCollapsed((v) => !v)}
-              title={collapsed ? "Expandir" : "Minimizar"}
-              style={{ padding: "4px 8px" }}
-            >
-              {collapsed ? "⟩" : "⟨"}
-            </button>
-          </div>
+            {collapsed ? "›" : "‹"}
+          </button>
 
-          {/* conteúdo da sidebar (mostra/oculta quando colapsa) */}
           {!collapsed && (
-            <div style={{ display: "grid", gap: 10 }}>
-              <EquipmentCard
-                equip={{
-                  head: { name: "Elmo Comum" },
-                  weapon: { name: "Espada" },
-                  chest: { name: "Peitoral" },
-                }}
-              />
-              <ItemsCard />
-              <ShopCard />
+            <div style={{ display: "grid", gap: 12 }}>
+              {/* Equipamentos */}
+              <div style={cardStyle}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h4 style={titleStyle}>Equipamentos</h4>
+                  <span title={pcTooltip} style={badgeStyle}>
+                    <strong>PC</strong> {pc}
+                  </span>
+                </div>
+
+                {/* Grid de slots */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gap: 10,
+                  }}
+                >
+                  {/* topo */}
+                  <button className="slot small" style={{ ...slotBase, gridColumn: "2 / span 1" }}>
+                    Elmo
+                  </button>
+
+                  {/* coluna esquerda */}
+                  <button className="slot" style={{ ...slotBase, gridColumn: "1 / span 1" }}>
+                    Arma
+                  </button>
+                  <button className="slot" style={{ ...slotBase, gridColumn: "1 / span 1" }}>
+                    Anel
+                  </button>
+
+                  {/* centro: avatar/peça principal */}
+                  <div
+                    style={{
+                      gridColumn: "2 / span 1",
+                      height: 112,
+                      borderRadius: 12,
+                      background: "rgba(255,255,255,0.02)",
+                      border: "1px dashed rgba(255,255,255,0.18)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#789",
+                      fontSize: 12,
+                    }}
+                  >
+                    {/* placeholder do avatar/peça */}
+                    {char ? `${char.name} ${char.surname}` : "Sem personagem ativo"}
+                  </div>
+
+                  {/* coluna direita */}
+                  <button className="slot" style={{ ...slotBase, gridColumn: "3 / span 1" }}>
+                    Escudo
+                  </button>
+                  <button className="slot" style={{ ...slotBase, gridColumn: "3 / span 1" }}>
+                    Peitoral
+                  </button>
+
+                  {/* linha de baixo */}
+                  <button className="slot" style={{ ...slotBase, gridColumn: "2 / span 1" }}>
+                    Calças
+                  </button>
+                  <button className="slot" style={{ ...slotBase, gridColumn: "3 / span 1" }}>
+                    Botas
+                  </button>
+                </div>
+              </div>
+
+              {/* Itens */}
+              <div style={cardStyle}>
+                <h4 style={titleStyle}>Itens</h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0,1fr))",
+                    gap: 8,
+                  }}
+                >
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} style={{ ...slotBase, height: 64 }} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Loja: NPC / Mercado */}
+              <div style={cardStyle}>
+                <h4 style={titleStyle}>Loja</h4>
+
+                {shopView === null && (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <button
+                      className="btn solid"
+                      onClick={() => setShopView("npc")}
+                      style={{
+                        height: 42,
+                        borderRadius: 10,
+                        background: "rgba(100,140,255,.15)",
+                        border: "1px solid rgba(100,140,255,.35)",
+                        color: "#dfe6ff",
+                      }}
+                    >
+                      Loja NPC
+                    </button>
+                    <button
+                      className="btn solid"
+                      onClick={() => setShopView("market")}
+                      style={{
+                        height: 42,
+                        borderRadius: 10,
+                        background: "rgba(150,255,200,.10)",
+                        border: "1px solid rgba(150,255,200,.28)",
+                        color: "#e6fff3",
+                      }}
+                    >
+                      Mercado
+                    </button>
+                  </div>
+                )}
+
+                {shopView !== null && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 12,
+                      padding: 10,
+                      height: 360, // "maximiza" na própria sidebar
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      overflow: "auto",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <strong>{shopView === "npc" ? "Loja NPC" : "Mercado"}</strong>
+                      <button
+                        className="btn ghost"
+                        onClick={() => setShopView(null)}
+                        style={{
+                          height: 32,
+                          padding: "0 10px",
+                          borderRadius: 8,
+                          background: "rgba(255,255,255,0.06)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          color: "#cbd3ff",
+                        }}
+                      >
+                        Voltar
+                      </button>
+                    </div>
+
+                    {/* Placeholder do conteúdo de loja/ofertas */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: 8,
+                      }}
+                    >
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            height: 76,
+                            borderRadius: 10,
+                            border: "1px dashed rgba(255,255,255,0.18)",
+                            background: "rgba(255,255,255,0.02)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 12,
+                            color: "#aab",
+                          }}
+                        >
+                          {shopView === "npc" ? "Item NPC" : "Oferta"}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* rótulo pequeno quando colapsado */}
+          {collapsed && (
+            <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", color: "#aab", fontSize: 12, marginTop: 30 }}>
+              Painel
             </div>
           )}
         </aside>
 
-        {/* CONTEÚDO principal */}
-        <main
-          style={{
-            order: 1,
-            flex: "1 1 0",
-            minWidth: 0,
-          }}
-        >
-          {children}
-        </main>
+        {/* CONTEÚDO PRINCIPAL */}
+        <div style={{ flex: "1 1 0", minWidth: 280 }}>{children}</div>
       </div>
     </AuthGuard>
   );
