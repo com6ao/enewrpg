@@ -1,20 +1,21 @@
-// app/api/characters/create/route.ts
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { resolveEnergy } from '@/lib/rules';
+// /api/characters/create/route.ts
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createBrowserClient } from "@supabase/ssr";
+import { resolveEnergy } from "@/lib/rules";
 
 export async function POST(req: Request) {
   const body = await req.json();
   const { name, surname, attrs } = body || {};
   if (!name || !surname || !attrs) {
-    return new NextResponse('payload inválido', { status: 400 });
+    return NextResponse.json({ message: "payload inválido" }, { status: 400 });
   }
 
-  // ⚠️ Next 15: cookies() pode ser assíncrono
-  const cookieStore = await cookies();
+  // (debug)
+  console.log("attrs recebidos:", attrs);
 
-  const supabase = createServerClient(
+  const cookieStore = cookies();
+  const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -22,32 +23,30 @@ export async function POST(req: Request) {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        // estes dois são opcionais para este endpoint, mas corretos caso precise
-        set(name: string, value: string, options?: Parameters<typeof cookieStore.set>[0] extends object ? Omit<Parameters<typeof cookieStore.set>[0], 'name' | 'value'> : any) {
-          cookieStore.set({ name, value, ...(options || {}) });
+        set(name: string, value: string, options?: any) {
+          cookieStore.set({ name, value, ...options });
         },
         remove(name: string, options?: any) {
-          cookieStore.set({ name, value: '', ...(options || {}) });
+          cookieStore.set({ name, value: "", ...options });
         },
-      },
+      }
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return new NextResponse('Não autenticado', { status: 401 });
+  const { data: user } = await supabase.auth.getUser();
+  if (!user) return new NextResponse("Não autenticado", { status: 401 });
 
   const { data: exists, error: e1 } = await supabase
-    .from('characters')
-    .select('id')
-    .eq('name', name)
+    .from("characters")
+    .select("name")
+    .eq("name", name)
     .maybeSingle();
-
   if (e1) return new NextResponse(e1.message, { status: 400 });
-  if (exists) return new NextResponse('Nome já está em uso', { status: 400 });
+  if (exists) return new NextResponse("Nome já está em uso", { status: 400 });
 
   const { universe, energy } = resolveEnergy(surname);
 
-  const { error } = await supabase.from('characters').insert({
+  const { error } = await supabase.from("characters").insert({
     user_id: user.id,
     name,
     surname,
@@ -59,6 +58,7 @@ export async function POST(req: Request) {
     wis: attrs.wis,
     cha: attrs.cha,
     con: attrs.con,
+    luck: attrs.luck,  // ✅ novo campo
   });
 
   if (error) return new NextResponse(error.message, { status: 400 });
