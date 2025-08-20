@@ -37,6 +37,8 @@ export default function ArenaPage() {
   const [enemyAttrs, setEnemyAttrs] = useState<Attrs | null>(null);
 
   const [lines, setLines] = useState<any[]>([]);
+  const [showCalc, setShowCalc] = useState(false); // sidebar toggle
+
   const timer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -104,7 +106,6 @@ export default function ArenaPage() {
     setEnemyAttrs(null);
   }
 
-  // formata 1 linha do log
   function formatLine(item: any): string {
     if (typeof item === "string") return item;
 
@@ -134,8 +135,18 @@ export default function ArenaPage() {
 
     return parts.filter(Boolean).join(" · ");
   }
+  function arrowDiff(v1: number, v2: number): string {
+    const diff = v1 - v2;
+    if (diff >= 10) return "↑↑↑";
+    if (diff >= 5) return "↑↑";
+    if (diff > 0) return "↑";
+    if (diff <= -10) return "↓↓↓";
+    if (diff <= -5) return "↓↓";
+    if (diff < 0) return "↓";
+    return "";
+  }
 
-  function AttrBox({ title, a }: { title: string; a: Attrs | null }) {
+  function AttrBox({ title, a, compare }: { title: string; a: Attrs | null; compare: Attrs | null }) {
     if (!a)
       return (
         <div className="card" style={{ padding: 8 }}>
@@ -156,13 +167,13 @@ export default function ArenaPage() {
             fontSize: 12,
           }}
         >
-          <div>STR {a.str}</div>
-          <div>DEX {a.dex}</div>
-          <div>INT {a.intt}</div>
-          <div>WIS {a.wis}</div>
-          <div>CHA {a.cha}</div>
-          <div>CON {a.con}</div>
-          <div>LUCK {a.luck}</div>
+          <div>STR {a.str} {compare ? arrowDiff(a.str, compare.str) : ""}</div>
+          <div>DEX {a.dex} {compare ? arrowDiff(a.dex, compare.dex) : ""}</div>
+          <div>INT {a.intt} {compare ? arrowDiff(a.intt, compare.intt) : ""}</div>
+          <div>WIS {a.wis} {compare ? arrowDiff(a.wis, compare.wis) : ""}</div>
+          <div>CHA {a.cha} {compare ? arrowDiff(a.cha, compare.cha) : ""}</div>
+          <div>CON {a.con} {compare ? arrowDiff(a.con, compare.con) : ""}</div>
+          <div>LUCK {a.luck} {compare ? arrowDiff(a.luck, compare.luck) : ""}</div>
           <div />
         </div>
       </div>
@@ -170,120 +181,133 @@ export default function ArenaPage() {
   }
 
   return (
-    <main className="container" style={{ display: "grid", gap: 12 }}>
-      <h1>Arena</h1>
+    <main className="container" style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+      {/* LEFT: ARENA */}
+      <div style={{ flex: "1 1 0" }}>
+        <h1>Arena</h1>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        {(["creep", "jungle", "ancient", "boss"] as const).map((a) => (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {(["creep", "jungle", "ancient", "boss"] as const).map((a) => (
+            <button
+              key={a}
+              className="btn"
+              disabled={state !== "idle"}
+              onClick={() => setArea(a)}
+              style={{ background: area === a ? "#3498db" : undefined }}
+            >
+              {a}
+            </button>
+          ))}
+
           <button
-            key={a}
             className="btn"
+            onClick={startBattle}
             disabled={state !== "idle"}
-            onClick={() => setArea(a)}
-            style={{ background: area === a ? "#3498db" : undefined }}
+            style={{ background: "#2ecc71" }}
           >
-            {a}
+            Lutar
           </button>
-        ))}
 
-        <button
-          className="btn"
-          onClick={startBattle}
-          disabled={state !== "idle"}
-          style={{ background: "#2ecc71" }} // verde
-        >
-          Lutar
-        </button>
+          {state !== "idle" && (
+            <button
+              className="btn"
+              onClick={reset}
+              style={{ background: "#e74c3c" }}
+            >
+              Reset
+            </button>
+          )}
 
-        {state !== "idle" && (
-          <button
-            className="btn"
-            onClick={reset}
-            style={{ background: "#e74c3c" }} // vermelho
-          >
-            Reset
-          </button>
-        )}
+          <label style={{ marginLeft: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={auto}
+              onChange={(e) => {
+                setAuto(e.target.checked);
+                if (e.target.checked && battle && state === "playing") stepAuto(battle.id);
+              }}
+            />
+            Auto
+          </label>
 
-        <label
-          style={{ marginLeft: 12, display: "flex", gap: 6, alignItems: "center" }}
-        >
-          <input
-            type="checkbox"
-            checked={auto}
-            onChange={(e) => {
-              setAuto(e.target.checked);
-              if (e.target.checked && battle && state === "playing")
-                stepAuto(battle.id);
-            }}
-          />
-          Auto
-        </label>
+          {!auto && state === "playing" && (
+            <button className="btn" onClick={nextTurn}>
+              Próximo turno
+            </button>
+          )}
+        </div>
 
-        {!auto && state === "playing" && (
-          <button className="btn" onClick={nextTurn}>
-            Próximo turno
-          </button>
+        {battle && (
+          <section className="card" style={{ display: "grid", gap: 12, marginTop: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <h3>Você</h3>
+                <HPBar current={battle.player_hp} max={battle.player_hp_max} />
+                <div style={{ marginTop: 8 }}>
+                  <AttrBox title="Atributos" a={playerAttrs} compare={enemyAttrs} />
+                </div>
+              </div>
+              <div>
+                <h3>{battle.enemy_name}</h3>
+                <HPBar current={battle.enemy_hp} max={battle.enemy_hp_max} />
+                <div style={{ marginTop: 8 }}>
+                  <AttrBox title="Atributos" a={enemyAttrs} compare={playerAttrs} />
+                </div>
+              </div>
+            </div>
+
+            <div className="muted">
+              Turnos revelados: {battle.cursor}{" "}
+              {battle.status === "finished" ? "(finalizada)" : ""}
+            </div>
+
+            <div
+              className="card"
+              style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}
+            >
+              {lines.map((line, i) => (
+                <div key={i} style={{ padding: 6, borderBottom: "1px solid #222" }}>
+                  {formatLine(line).split(" · Cálculo:")[0]}
+                </div>
+              ))}
+            </div>
+
+            <button className="btn" style={{ width: "100%" }} onClick={() => setShowCalc(!showCalc)}>
+              Ver cálculos de combate
+            </button>
+          </section>
         )}
       </div>
 
-      {battle && (
-        <section className="card" style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <h3>Você</h3>
-              <HPBar current={battle.player_hp} max={battle.player_hp_max} />
-              <div style={{ marginTop: 8 }}>
-                <AttrBox title="Atributos" a={playerAttrs} />
-              </div>
-            </div>
-            <div>
-              <h3>{battle.enemy_name}</h3>
-              <HPBar current={battle.enemy_hp} max={battle.enemy_hp_max} />
-              <div style={{ marginTop: 8 }}>
-                <AttrBox title="Atributos" a={enemyAttrs} />
-              </div>
-            </div>
+      {/* RIGHT: SIDEBAR */}
+      <aside
+        style={{
+          width: 240,
+          flex: "0 0 240px",
+          background: "#111",
+          padding: 12,
+          borderRadius: 8,
+          height: "fit-content",
+        }}
+      >
+        <h3>Detalhes do combate</h3>
+        {showCalc ? (
+          <div style={{ fontSize: 12, maxHeight: 500, overflow: "auto", marginTop: 6 }}>
+            {lines.map((l, i) => {
+              const parts = formatLine(l).split(" · Cálculo:");
+              return (
+                <div key={i} style={{ borderBottom: "1px solid #222", padding: 4 }}>
+                  {parts[1] ? "Cálculo:" + parts[1] : "-"}
+                </div>
+              );
+            })}
           </div>
-
-          <div className="muted">
-            Turnos revelados: {battle.cursor}{" "}
-            {battle.status === "finished" ? "(finalizada)" : ""}
+        ) : (
+          <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+            Clique no botão "Ver cálculos de combate" na arena para exibir cálculos aqui.
           </div>
-
-          <div
-            className="card"
-            style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}
-          >
-            {lines.map((line, i) => (
-              <div
-                key={i}
-                style={{ padding: 6, borderBottom: "1px solid #222" }}
-              >
-                {formatLine(line)}
-              </div>
-            ))}
-          </div>
-
-          <div
-            className="card"
-            style={{ background: "#0e0e0e", padding: 10, fontSize: 12, color: "#bbb" }}
-          >
-            <b>Legenda do cálculo:</b> atk = ataque, def = defesa, base = dano-base,
-            crit = crítico, mult = multiplicador do crítico, rand = fator aleatório.
-          </div>
-
-          {state === "done" && (
-            <div className="card" style={{ background: "#111", padding: 12 }}>
-              {battle.winner === "draw"
-                ? "Empate"
-                : battle.winner === "player"
-                ? "Vitória"
-                : "Derrota"}
-            </div>
-          )}
-        </section>
-      )}
+        )}
+      </aside>
     </main>
   );
 }
