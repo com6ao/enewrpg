@@ -46,6 +46,8 @@ export default function Nav() {
 
   const links: [string, string][] = [
     ["/", "Início"],
+    ["/login", "Login"],        // 👈 sempre aparece
+    ["/register", "Registrar"], // 👈 sempre aparece
     ["/dashboard", "Status"],
     ["/characters", "Personagens"],
     ["/missions", "Missões"],
@@ -56,8 +58,6 @@ export default function Nav() {
     ["/rankings", "Rankings"],
     ["/forum", "Fórum"],
     ["/guild", "Organização"],
-    ["/register", "Registrar"], // 👈 sempre aparece
-    ["/login", "Login"],        // 👈 sempre aparece
   ];
 
   const scrollBy = (px: number) =>
