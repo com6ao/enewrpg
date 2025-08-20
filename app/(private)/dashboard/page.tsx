@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 type Character = {
   id: string; name: string; surname: string;
@@ -10,7 +10,7 @@ type Character = {
   str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number;
 };
 
-const supabase = createClient(
+const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
@@ -25,12 +25,18 @@ export default function DashboardPage() {
     (async () => {
       const {
         data: { session },
-      } = await supabase.auth.getSession(); // 🔁 corrigido: getUser → getSession
+        error,
+      } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("getSession error: ", error);
+      }
+
       const user = session?.user ?? null;
 
-      if (!user) { 
-        router.push("/login"); 
-        return; 
+      if (!user) {
+        router.push("/login");
+        return;
       }
       setEmail(user.email ?? null);
 
@@ -52,7 +58,7 @@ export default function DashboardPage() {
         .eq("id", profile.active_character_id)
         .maybeSingle();
 
-      console.log("DASHBOARD CHARACTER:", personagem); // debug mantido
+      console.log("DASHBOARD CHARACTER:", personagem); // debug
       setChar(personagem as any);
       setLoading(false);
     })();
@@ -63,11 +69,13 @@ export default function DashboardPage() {
     router.push("/login");
   }
 
-  if (loading) return (
-    <main className="container">
-      <p>Carregando...</p>
-    </main>
-  );
+  if (loading) {
+    return (
+      <main className="container">
+        <p>Carregando...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="container">
