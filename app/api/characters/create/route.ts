@@ -12,15 +12,15 @@ export async function POST(req: Request) {
 
   console.log("attrs recebidos:", attrs); // debug
 
-  const cookieStore = cookies();
+  // cookies() precisa ser await para usar getAll()
+  const cookieStore = await cookies();
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        async get(name: string) {
-          const all = await cookieStore.getAll();
-          const found = all.find((c) => c.name === name);
+        get(name: string) {
+          const found = cookieStore.getAll().find((c) => c.name === name);
           return found?.value;
         },
         set(name: string, value: string, options?: any) {
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     wis: attrs.wis,
     cha: attrs.cha,
     con: attrs.con,
-    luck: attrs.luck, // ✅ agora inserindo corretamente
+    luck: attrs.luck,
   });
 
   if (error) return new NextResponse(error.message, { status: 400 });
