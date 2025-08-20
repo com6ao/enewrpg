@@ -10,13 +10,14 @@ export async function POST(req: Request) {
     return new NextResponse('payload inválido', { status: 400 });
   }
 
-  const cookieStore = cookies();
+  // cookies() precisa ser awaited no App Router
+  const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (n: string) => cookieStore.get(n)?.value
+        get: (n: string) => cookieStore.get(n)?.value,
       }
     }
   );
@@ -46,10 +47,9 @@ export async function POST(req: Request) {
     wis: attrs.wis,
     cha: attrs.cha,
     con: attrs.con,
-    luck: attrs.luck    // ✅ adicionado
+    luck: attrs.luck,
   });
 
   if (error) return new NextResponse(error.message, { status: 400 });
-
   return NextResponse.json({ ok: true });
 }
