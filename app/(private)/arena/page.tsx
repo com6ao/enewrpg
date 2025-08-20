@@ -37,7 +37,7 @@ export default function ArenaPage() {
   const [enemyAttrs, setEnemyAttrs] = useState<Attrs | null>(null);
 
   const [lines, setLines] = useState<any[]>([]);
-  const [showCalc, setShowCalc] = useState(false); // sidebar toggle
+  const [showCalc, setShowCalc] = useState(false);
 
   const timer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -106,6 +106,7 @@ export default function ArenaPage() {
     setEnemyAttrs(null);
   }
 
+  // ---- formatação de linha + detecção de origem ----
   function formatLine(item: any): string {
     if (typeof item === "string") return item;
 
@@ -130,23 +131,34 @@ export default function ArenaPage() {
         .join(", ");
       parts.push(`Cálculo: ${kv}`);
     }
-    if (item.target_hp_after != null)
-      parts.push(`HP alvo após: ${item.target_hp_after}`);
+    if (item.target_hp_after != null) parts.push(`HP alvo após: ${item.target_hp_after}`);
 
     return parts.filter(Boolean).join(" · ");
   }
 
-  function arrowDiff(v1: number, v2: number): string {
-    const diff = v1 - v2;
-    if (diff >= 10) return "↑↑↑";
-    if (diff >= 5) return "↑↑";
-    if (diff > 0) return "↑";
-    if (diff <= -10) return "↓↓↓";
-    if (diff <= -5) return "↓↓";
-    if (diff < 0) return "↓";
-    return "";
+  function resolveSource(line: any, enemyName?: string): "player" | "enemy" | "neutral" {
+    if (line && typeof line === "object") {
+      if (line.source === "player" || line.source === "enemy") return line.source;
+      if (line.actor === "player" || line.actor === "enemy") return line.actor;
+      if (line.attacker === "player" || line.attacker === "enemy") return line.attacker;
+    }
+    const t = formatLine(line).toLowerCase();
+    const enemy = (enemyName || "").toLowerCase();
+
+    if (t.startsWith("você") || t.includes("você causou")) return "player";
+    if (enemy && (t.startsWith(enemy) || t.includes("em você"))) return "enemy";
+
+    return "neutral";
   }
 
+  function bgFor(source: "player" | "enemy" | "neutral") {
+    if (source === "player") return "rgba(46, 204, 113, 0.12)"; // verde suave
+    if (source === "enemy")  return "rgba(231, 76, 60, 0.12)";  // vermelho suave
+    return "transparent";
+  }
+  // ---------------------------------------------------
+
+  // setas de diferença
   function AttrBox({ title, a, compare }: { title: string; a: Attrs | null; compare: Attrs | null }) {
     if (!a)
       return (
@@ -197,7 +209,14 @@ export default function ArenaPage() {
   }
 
   return (
-    <main className="container" style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+    <main
+      className="container"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 12,
+      }}
+    >
       {/* LEFT: ARENA */}
       <div style={{ flex: "1 1 0" }}>
         <h1>Arena</h1>
@@ -273,30 +292,19 @@ export default function ArenaPage() {
             </div>
 
             <div className="muted">
-              Turnos revelados: {battle.cursor}{" "}
-              {battle.status === "finished" ? "(finalizada)" : ""}
+              Turnos revelados: {battle.cursor} {battle.status === "finished" ? "(finalizada)" : ""}
             </div>
 
-            {/* Log principal com fundo colorido por origem */}
-            <div
-              className="card"
-              style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}
-            >
+            {/* LOG PRINCIPAL COM CORES */}
+            <div className="card" style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}>
               {lines.map((line, i) => {
                 const text = formatLine(line).split(" · Cálculo:")[0];
-                let bg = "transparent";
-                if (typeof line === "object") {
-                  if (line.source === "player") bg = "rgba(46, 204, 113, 0.12)";   // verde
-                  else if (line.source === "enemy") bg = "rgba(231, 76, 60, 0.12)"; // vermelho
-                }
+                const source = resolveSource(line, battle?.enemy_name);
+                const bg = bgFor(source);
                 return (
                   <div
                     key={i}
-                    style={{
-                      padding: 6,
-                      borderBottom: "1px solid #222",
-                      background: bg,
-                    }}
+                    style={{ padding: 6, borderBottom: "1px solid #222", background: bg }}
                   >
                     {text}
                   </div>
@@ -311,7 +319,7 @@ export default function ArenaPage() {
         )}
       </div>
 
-      {/* RIGHT: SIDEBAR */}
+      {/* RIGHT: SIDEBAR (fixa 240px; no mobile cai abaixo) */}
       <aside
         style={{
           width: 240,
@@ -327,20 +335,10 @@ export default function ArenaPage() {
           <div style={{ fontSize: 12, maxHeight: 500, overflow: "auto", marginTop: 6 }}>
             {lines.map((l, i) => {
               const parts = formatLine(l).split(" · Cálculo:");
-              let bg = "transparent";
-              if (typeof l === "object") {
-                if (l.source === "player") bg = "rgba(46, 204, 113, 0.12)";
-                else if (l.source === "enemy") bg = "rgba(231, 76, 60, 0.12)";
-              }
+              const source = resolveSource(l, battle?.enemy_name);
+              const bg = bgFor(source);
               return (
-                <div
-                  key={i}
-                  style={{
-                    borderBottom: "1px solid #222",
-                    padding: 4,
-                    background: bg,
-                  }}
-                >
+                <div key={i} style={{ borderBottom: "1px solid #222", padding: 4, background: bg }}>
                   {parts[1] ? "Cálculo:" + parts[1] : "-"}
                 </div>
               );
@@ -348,7 +346,7 @@ export default function ArenaPage() {
           </div>
         ) : (
           <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-            Clique no botão "Ver cálculos de combate" na arena para exibir cálculos aqui.
+            Clique no botão “Ver cálculos de combate” na arena para exibir cálculos aqui.
           </div>
         )}
       </aside>
