@@ -135,6 +135,7 @@ export default function ArenaPage() {
 
     return parts.filter(Boolean).join(" · ");
   }
+
   function arrowDiff(v1: number, v2: number): string {
     const diff = v1 - v2;
     if (diff >= 10) return "↑↑↑";
@@ -147,54 +148,53 @@ export default function ArenaPage() {
   }
 
   function AttrBox({ title, a, compare }: { title: string; a: Attrs | null; compare: Attrs | null }) {
-  if (!a)
+    if (!a)
+      return (
+        <div className="card" style={{ padding: 8 }}>
+          <h3>{title}</h3>
+          <div className="muted">Atributos indisponíveis</div>
+        </div>
+      );
+
+    function renderArrow(v1: number, v2: number) {
+      const diff = v1 - v2;
+      let symbol = "";
+      if (diff >= 10) symbol = "↑↑↑";
+      else if (diff >= 5) symbol = "↑↑";
+      else if (diff > 0) symbol = "↑";
+      else if (diff <= -10) symbol = "↓↓↓";
+      else if (diff <= -5) symbol = "↓↓";
+      else if (diff < 0) symbol = "↓";
+
+      const color = diff > 0 ? "#2ecc71" : diff < 0 ? "#e74c3c" : "#bbb";
+      return <span style={{ fontSize: 8, color, marginLeft: 2 }}>{symbol}</span>;
+    }
+
     return (
       <div className="card" style={{ padding: 8 }}>
         <h3>{title}</h3>
-        <div className="muted">Atributos indisponíveis</div>
+        <div className="muted">Lv {a.level}</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4,minmax(0,1fr))",
+            gap: 6,
+            marginTop: 6,
+            fontSize: 12,
+          }}
+        >
+          <div>STR {a.str} {compare && renderArrow(a.str, compare.str)}</div>
+          <div>DEX {a.dex} {compare && renderArrow(a.dex, compare.dex)}</div>
+          <div>INT {a.intt} {compare && renderArrow(a.intt, compare.intt)}</div>
+          <div>WIS {a.wis} {compare && renderArrow(a.wis, compare.wis)}</div>
+          <div>CHA {a.cha} {compare && renderArrow(a.cha, compare.cha)}</div>
+          <div>CON {a.con} {compare && renderArrow(a.con, compare.con)}</div>
+          <div>LUCK {a.luck} {compare && renderArrow(a.luck, compare.luck)}</div>
+          <div />
+        </div>
       </div>
     );
-
-  function renderArrow(v1: number, v2: number) {
-    const diff = v1 - v2;
-    let symbol = "";
-    if (diff >= 10) symbol = "↑↑↑";
-    else if (diff >= 5) symbol = "↑↑";
-    else if (diff > 0) symbol = "↑";
-    else if (diff <= -10) symbol = "↓↓↓";
-    else if (diff <= -5) symbol = "↓↓";
-    else if (diff < 0) symbol = "↓";
-
-    const color = diff > 0 ? "#2ecc71" : diff < 0 ? "#e74c3c" : "#bbb";
-
-    return <span style={{ fontSize: 8, color, marginLeft: 2 }}>{symbol}</span>;
   }
-
-  return (
-    <div className="card" style={{ padding: 8 }}>
-      <h3>{title}</h3>
-      <div className="muted">Lv {a.level}</div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4,minmax(0,1fr))",
-          gap: 6,
-          marginTop: 6,
-          fontSize: 12,
-        }}
-      >
-        <div>STR {a.str} {compare && renderArrow(a.str, compare.str)}</div>
-        <div>DEX {a.dex} {compare && renderArrow(a.dex, compare.dex)}</div>
-        <div>INT {a.intt} {compare && renderArrow(a.intt, compare.intt)}</div>
-        <div>WIS {a.wis} {compare && renderArrow(a.wis, compare.wis)}</div>
-        <div>CHA {a.cha} {compare && renderArrow(a.cha, compare.cha)}</div>
-        <div>CON {a.con} {compare && renderArrow(a.con, compare.con)}</div>
-        <div>LUCK {a.luck} {compare && renderArrow(a.luck, compare.luck)}</div>
-        <div />
-      </div>
-    </div>
-  );
-}
 
   return (
     <main className="container" style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
@@ -277,15 +277,31 @@ export default function ArenaPage() {
               {battle.status === "finished" ? "(finalizada)" : ""}
             </div>
 
+            {/* Log principal com fundo colorido por origem */}
             <div
               className="card"
               style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}
             >
-              {lines.map((line, i) => (
-                <div key={i} style={{ padding: 6, borderBottom: "1px solid #222" }}>
-                  {formatLine(line).split(" · Cálculo:")[0]}
-                </div>
-              ))}
+              {lines.map((line, i) => {
+                const text = formatLine(line).split(" · Cálculo:")[0];
+                let bg = "transparent";
+                if (typeof line === "object") {
+                  if (line.source === "player") bg = "rgba(46, 204, 113, 0.12)";   // verde
+                  else if (line.source === "enemy") bg = "rgba(231, 76, 60, 0.12)"; // vermelho
+                }
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      padding: 6,
+                      borderBottom: "1px solid #222",
+                      background: bg,
+                    }}
+                  >
+                    {text}
+                  </div>
+                );
+              })}
             </div>
 
             <button className="btn" style={{ width: "100%" }} onClick={() => setShowCalc(!showCalc)}>
@@ -311,8 +327,20 @@ export default function ArenaPage() {
           <div style={{ fontSize: 12, maxHeight: 500, overflow: "auto", marginTop: 6 }}>
             {lines.map((l, i) => {
               const parts = formatLine(l).split(" · Cálculo:");
+              let bg = "transparent";
+              if (typeof l === "object") {
+                if (l.source === "player") bg = "rgba(46, 204, 113, 0.12)";
+                else if (l.source === "enemy") bg = "rgba(231, 76, 60, 0.12)";
+              }
               return (
-                <div key={i} style={{ borderBottom: "1px solid #222", padding: 4 }}>
+                <div
+                  key={i}
+                  style={{
+                    borderBottom: "1px solid #222",
+                    padding: 4,
+                    background: bg,
+                  }}
+                >
                   {parts[1] ? "Cálculo:" + parts[1] : "-"}
                 </div>
               );
