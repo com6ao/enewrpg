@@ -23,10 +23,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: session } = await supabase.auth.getUser();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession(); // 🔁 corrigido: getUser → getSession
       const user = session?.user ?? null;
 
-      if (!user) { router.push("/login"); return; }
+      if (!user) { 
+        router.push("/login"); 
+        return; 
+      }
       setEmail(user.email ?? null);
 
       const { data: profile } = await supabase
@@ -47,7 +52,7 @@ export default function DashboardPage() {
         .eq("id", profile.active_character_id)
         .maybeSingle();
 
-      console.log("DASHBOARD CHARACTER:", personagem); // 👈 inserido para debug
+      console.log("DASHBOARD CHARACTER:", personagem); // debug mantido
       setChar(personagem as any);
       setLoading(false);
     })();
@@ -58,7 +63,11 @@ export default function DashboardPage() {
     router.push("/login");
   }
 
-  if (loading) return <main className="container"><p>Carregando...</p></main>;
+  if (loading) return (
+    <main className="container">
+      <p>Carregando...</p>
+    </main>
+  );
 
   return (
     <main className="container">
