@@ -36,7 +36,6 @@ export default function DashboardPage() {
         .maybeSingle();
 
       if (!profile?.active_character_id) {
-        // logado, porém sem personagem ativo
         setChar(null);
         setLoading(false);
         return;
@@ -48,6 +47,7 @@ export default function DashboardPage() {
         .eq("id", profile.active_character_id)
         .maybeSingle();
 
+      console.log("DASHBOARD CHARACTER:", personagem); // 👈 inserido para debug
       setChar(personagem as any);
       setLoading(false);
     })();
