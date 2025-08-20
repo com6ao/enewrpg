@@ -1,4 +1,3 @@
-// /api/characters/create/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createBrowserClient } from "@supabase/ssr";
@@ -11,8 +10,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "payload inválido" }, { status: 400 });
   }
 
-  // (debug)
-  console.log("attrs recebidos:", attrs);
+  console.log("attrs recebidos:", attrs); // debug
 
   const cookieStore = cookies();
   const supabase = createBrowserClient(
@@ -20,8 +18,10 @@ export async function POST(req: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
+        async get(name: string) {
+          const all = await cookieStore.getAll();
+          const found = all.find((c) => c.name === name);
+          return found?.value;
         },
         set(name: string, value: string, options?: any) {
           cookieStore.set({ name, value, ...options });
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
         remove(name: string, options?: any) {
           cookieStore.set({ name, value: "", ...options });
         },
-      }
+      },
     }
   );
 
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     wis: attrs.wis,
     cha: attrs.cha,
     con: attrs.con,
-    luck: attrs.luck,  // ✅ novo campo
+    luck: attrs.luck, // ✅ agora inserindo corretamente
   });
 
   if (error) return new NextResponse(error.message, { status: 400 });
