@@ -12,7 +12,6 @@ export async function POST(req: Request) {
 
   console.log("attrs recebidos:", attrs); // debug
 
-  // cookies() precisa ser await para usar getAll()
   const cookieStore = await cookies();
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,7 +46,7 @@ export async function POST(req: Request) {
   const { universe, energy } = resolveEnergy(surname);
 
   const { error } = await supabase.from("characters").insert({
-    user_id: user.id,
+    user_id: user!.id, // ✅ TS now knows it's not null
     name,
     surname,
     universe,
