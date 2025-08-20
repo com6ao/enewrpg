@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ALL_SURNAMES } from "@/lib/races";
+import { ALL_SURNAMES } from "@/lib/rules";
 
 export default function NewCharacterPage() {
   const [name, setName]       = useState("");
