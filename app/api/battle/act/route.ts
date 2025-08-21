@@ -3,12 +3,10 @@ import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
 // ===== tipos =====
-type Attrs = {
-  str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number;
-};
+type Attrs = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number };
 type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs };
 
-// formato esperado pela UI (coluna direita)
+// formato esperado pela UI + barras
 type UILog = {
   actor: "player" | "enemy";
   type: "action_complete";
@@ -17,6 +15,10 @@ type UILog = {
   damage_type: "hit" | "crit" | "miss";
   formula: string;
   target_hp_after: number;
+  bar_player_before: number; // 0..100
+  bar_player_after: number;  // 0..100
+  bar_enemy_before: number;  // 0..100
+  bar_enemy_after: number;   // 0..100
 };
 
 type StepsBody = { battle_id?: string; steps?: number };
@@ -69,7 +71,7 @@ function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
 // ===== velocidade = DEX + WIS =====
 function speedOf(u: UnitState) {
   const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
-  return 0.4 + dex * 0.05 + wis * 0.03; // escala base
+  return 0.4 + dex * 0.05 + wis * 0.03;
 }
 function rng(luck: number) {
   const base = Math.random();
@@ -78,7 +80,7 @@ function rng(luck: number) {
 }
 
 // ===== dano = STR + INT =====
-function attemptAttack(atk: UnitState, _def: UnitState) {
+function attemptAttack(atk: UnitState) {
   const { str = 0, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
   const roll = rng(luck);
   const miss = roll.miss;
@@ -93,7 +95,7 @@ function attemptAttack(atk: UnitState, _def: UnitState) {
   return { damage, kind, desc, formula };
 }
 
-// ===== ATB determinístico com desempate alternado; processa múltiplas ações no mesmo ciclo =====
+// ===== ATB determinístico com desempate alternado; telemetria das barras =====
 function simulateActions(player: UnitState, enemy: UnitState, maxActions: number) {
   let p = { ...player }, e = { ...enemy };
   let barP = 0, barE = 0;            // 0..100
@@ -118,8 +120,9 @@ function simulateActions(player: UnitState, enemy: UnitState, maxActions: number
         (lastActor === "enemy" ? "player" : "enemy");
 
       if (actor === "player") {
+        const beforeP = Math.min(100, barP), beforeE = Math.min(100, barE);
         barP -= 100;
-        const r = attemptAttack(p, e);
+        const r = attemptAttack(p);
         e = { ...e, hp: clamp(e.hp - r.damage, 0, e.hpMax) };
         lines.push({
           actor: "player",
@@ -129,11 +132,16 @@ function simulateActions(player: UnitState, enemy: UnitState, maxActions: number
           damage_type: r.kind,
           formula: r.formula,
           target_hp_after: e.hp,
+          bar_player_before: beforeP,
+          bar_player_after: Math.max(0, barP),
+          bar_enemy_before: beforeE,
+          bar_enemy_after: barE,
         });
         lastActor = "player";
       } else {
+        const beforeP = Math.min(100, barP), beforeE = Math.min(100, barE);
         barE -= 100;
-        const r = attemptAttack(e, p);
+        const r = attemptAttack(e);
         p = { ...p, hp: clamp(p.hp - r.damage, 0, p.hpMax) };
         lines.push({
           actor: "enemy",
@@ -143,13 +151,18 @@ function simulateActions(player: UnitState, enemy: UnitState, maxActions: number
           damage_type: r.kind,
           formula: r.formula,
           target_hp_after: p.hp,
+          bar_player_before: beforeP,
+          bar_player_after: barP,
+          bar_enemy_before: beforeE,
+          bar_enemy_after: Math.max(0, barE),
         });
         lastActor = "enemy";
       }
     }
   }
 
-  return { player: p, enemy: e, lines };
+  // retorna também as barras atuais para desenhar após o passo
+  return { player: p, enemy: e, lines, gauges: { player: barP, enemy: barE } };
 }
 
 // ===== handler =====
@@ -199,6 +212,9 @@ export async function POST(req: Request) {
       status: finished ? "finished" : "active",
       winner: finished ? winner : bt.winner ?? null,
       log: mergedLog,
+      // opcional: persistir as barras atuais
+      bar_player: r.gauges.player,
+      bar_enemy: r.gauges.enemy,
     })
     .eq("id", bt.id)
     .select("*")
@@ -206,5 +222,9 @@ export async function POST(req: Request) {
 
   if (updErr) return new NextResponse(updErr.message, { status: 400 });
 
-  return NextResponse.json({ battle: updated, lines: outLines });
+  return NextResponse.json({
+    battle: updated,
+    lines: outLines,
+    gauges: r.gauges, // { player, enemy } 0..100
+  });
 }
