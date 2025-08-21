@@ -70,23 +70,37 @@ export async function resolveCombat(player: Attrs, enemy: Attrs & { name?: strin
   let p = toUnit("Você", player);
   let e = toUnit(enemy.name ?? "Inimigo", enemy);
 
-  let gP = 0, gE = 0;
-  const sP = speedOf(p), sE = speedOf(e);
-  const log: CombatLine[] = [];
-  const MAX_ACTIONS = 200;
+      if (barP >= 100) {
+      barP -= 100;
+      const r = attemptAttack(player, enemy);
+      enemyHP = Math.max(0, enemyHP - r.damage);
+      log.push({
+        actor: "player",
+        type: "action_complete",
+        description: r.desc.replace("TARGET", enemy.name).replace("YOU", "Você"),
+        damage: r.damage,
+        damage_type: r.kind,
+        formula: r.formula,
+        target_hp_after: enemyHP,
+      });
+      if (enemyHP <= 0) break;
+    }
 
-  while (p.hp > 0 && e.hp > 0 && log.length < MAX_ACTIONS) {
-    while (gP < 1 && gE < 1) { gP += sP; gE += sE; }
-    if (gP >= gE) {
-      const ln = doAttack(p, e, "player", "enemy"); ln.source = "player";
-      e = { ...e, hp: clamp(e.hp - ln.dmg, 0, e.hpMax) };
-      log.push(ln);
-      gP -= 1;
-    } else {
-      const ln = doAttack(e, p, "enemy", "player"); ln.source = "enemy";
-      p = { ...p, hp: clamp(p.hp - ln.dmg, 0, p.hpMax) };
-      log.push(ln);
-      gE -= 1;
+    if (barE >= 100) {
+      barE -= 100;
+      const r = attemptAttack(enemy, player);
+      playerHP = Math.max(0, playerHP - r.damage);
+      log.push({
+        actor: "enemy",
+        type: "action_complete",
+        // aqui o atacante é o inimigo: YOU -> nome do inimigo, TARGET -> Você
+        description: r.desc.replace("YOU", enemy.name).replace("TARGET", "Você"),
+        damage: r.damage,
+        damage_type: r.kind,
+        formula: r.formula,
+        target_hp_after: playerHP,
+      });
+      if (playerHP <= 0) break;
     }
   }
 
