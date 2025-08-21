@@ -2,11 +2,9 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-// ===== tipos =====
 type Attrs = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number };
 type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs };
 
-// formato esperado pela UI + barras
 type UILog = {
   actor: "player" | "enemy";
   type: "action_complete";
@@ -15,17 +13,16 @@ type UILog = {
   damage_type: "hit" | "crit" | "miss";
   formula: string;
   target_hp_after: number;
-  bar_player_before: number; // 0..100
-  bar_player_after: number;  // 0..100
-  bar_enemy_before: number;  // 0..100
-  bar_enemy_after: number;   // 0..100
+  bar_player_before: number;
+  bar_player_after: number;
+  bar_enemy_before: number;
+  bar_enemy_after: number;
 };
 
 type StepsBody = { battle_id?: string; steps?: number };
-
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
-// ===== atributos: leitura tolerante =====
+// ---------- helpers ----------
 function parseMaybeJSON<T>(v: any): T | null {
   if (v == null) return null;
   if (typeof v === "object") return v as T;
@@ -68,7 +65,7 @@ function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
   return { player, enemy };
 }
 
-// ===== velocidade = DEX + WIS =====
+// ---------- formulas ----------
 function speedOf(u: UnitState) {
   const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
   return 0.4 + dex * 0.05 + wis * 0.03;
@@ -78,8 +75,6 @@ function rng(luck: number) {
   const luckBoost = clamp(luck, 0, 100) / 100;
   return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
 }
-
-// ===== dano = STR + INT =====
 function attemptAttack(atk: UnitState) {
   const { str = 0, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
   const roll = rng(luck);
@@ -95,24 +90,22 @@ function attemptAttack(atk: UnitState) {
   return { damage, kind, desc, formula };
 }
 
-// ===== ATB determinístico com desempate alternado; telemetria das barras =====
+// ---------- simulator (ATB com empate alternado) ----------
 function simulateActions(player: UnitState, enemy: UnitState, maxActions: number) {
   let p = { ...player }, e = { ...enemy };
-  let barP = 0, barE = 0;            // 0..100
+  let barP = 0, barE = 0; // 0..100
   const spdP = speedOf(p) * 100;
   const spdE = speedOf(e) * 100;
   const lines: UILog[] = [];
   let lastActor: "player" | "enemy" = "enemy";
 
   while (lines.length < maxActions && p.hp > 0 && e.hp > 0) {
-    // avança até o próximo limiar 100 de alguém
     const needP = Math.max(0, 100 - barP);
     const needE = Math.max(0, 100 - barE);
     const dt = Math.min(needP / spdP, needE / spdE);
     barP += spdP * dt;
     barE += spdE * dt;
 
-    // processa todas as ações acumuladas neste instante
     while ((barP >= 100 || barE >= 100) && lines.length < maxActions && p.hp > 0 && e.hp > 0) {
       const actor: "player" | "enemy" =
         barP > barE ? "player" :
@@ -160,18 +153,16 @@ function simulateActions(player: UnitState, enemy: UnitState, maxActions: number
       }
     }
   }
-
-  // retorna também as barras atuais para desenhar após o passo
   return { player: p, enemy: e, lines, gauges: { player: barP, enemy: barE } };
 }
 
-// ===== handler =====
+// ---------- handler ----------
 export async function POST(req: Request) {
   let body: StepsBody;
   try { body = await req.json(); } catch { return new NextResponse("payload inválido", { status: 400 }); }
 
   const battle_id = body.battle_id;
-  const wantedSteps = Math.max(1, Number(body.steps ?? 1)); // número de AÇÕES
+  const wantedSteps = Math.max(1, Number(body.steps ?? 1));
   if (!battle_id) return new NextResponse("battle_id obrigatório", { status: 400 });
 
   const supabase = await getSupabaseServer();
@@ -190,7 +181,6 @@ export async function POST(req: Request) {
   if (bt.status === "finished") return NextResponse.json({ battle: bt, lines: [] });
 
   const { player, enemy } = rowToStates(bt);
-
   const r = simulateActions(player, enemy, wantedSteps);
   const outLines = r.lines;
 
@@ -212,9 +202,7 @@ export async function POST(req: Request) {
       status: finished ? "finished" : "active",
       winner: finished ? winner : bt.winner ?? null,
       log: mergedLog,
-      // opcional: persistir as barras atuais
-      bar_player: r.gauges.player,
-      bar_enemy: r.gauges.enemy,
+      gauges: r.gauges, // <-- salva jsonb { player, enemy }
     })
     .eq("id", bt.id)
     .select("*")
@@ -225,6 +213,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     battle: updated,
     lines: outLines,
-    gauges: r.gauges, // { player, enemy } 0..100
+    gauges: r.gauges,
   });
 }
