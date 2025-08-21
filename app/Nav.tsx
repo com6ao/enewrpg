@@ -46,8 +46,8 @@ export default function Nav() {
 
   const links: [string, string][] = [
     ["/", "Início"],
-    ["/login", "Login"],        // 👈 sempre aparece
-    ["/register", "Registrar"], // 👈 sempre aparece
+    ["/login", "Login"],
+    ["/register", "Registrar"],
     ["/dashboard", "Status"],
     ["/characters", "Personagens"],
     ["/missions", "Missões"],
@@ -97,26 +97,31 @@ export default function Nav() {
           msOverflowStyle: "none",
         }}
       >
-        {links.map(([href, label]) => (
-          <Link
-            key={href}
-            href={href}
-            aria-current={pathname === href ? "page" : undefined}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              textDecoration: "none",
-              color: pathname === href ? "#fff" : "#e5e7eb",
-              background:
-                pathname === href
-                  ? "rgba(255,255,255,0.18)"
-                  : "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.12)",
-            }}
-          >
-            {label}
-          </Link>
-        ))}
+        {links
+          // 👇 única mudança: esconde login/registrar se estiver logado
+          .filter(([href]) =>
+            userEmail ? href !== "/login" && href !== "/register" : true
+          )
+          .map(([href, label]) => (
+            <Link
+              key={href}
+              href={href}
+              aria-current={pathname === href ? "page" : undefined}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                textDecoration: "none",
+                color: pathname === href ? "#fff" : "#e5e7eb",
+                background:
+                  pathname === href
+                    ? "rgba(255,255,255,0.18)"
+                    : "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.12)",
+              }}
+            >
+              {label}
+            </Link>
+          ))}
 
         {userEmail && (
           <div
