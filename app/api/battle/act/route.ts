@@ -1,16 +1,29 @@
+// app/api/battle/act/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-// ====== tipos ======
-type Attrs = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; };
-type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs; };
-type CombatLine = { text: string; dmg: number; from: "player" | "enemy"; to: "player" | "enemy"; kind: "hit" | "crit" | "miss"; source?: "player" | "enemy" };
+// ===== tipos =====
+type Attrs = {
+  str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number;
+};
+type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs };
+
+// formato esperado pela UI (coluna direita)
+type UILog = {
+  actor: "player" | "enemy";
+  type: "action_complete";
+  description: string;
+  damage: number;
+  damage_type: "hit" | "crit" | "miss";
+  formula: string;
+  target_hp_after: number;
+};
 
 type StepsBody = { battle_id?: string; steps?: number };
 
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
-// ====== util atributos robusto ======
+// ===== atributos: leitura tolerante =====
 function parseMaybeJSON<T>(v: any): T | null {
   if (v == null) return null;
   if (typeof v === "object") return v as T;
@@ -23,9 +36,9 @@ function pickFirst<T = any>(row: any, keys: string[]): T | null {
 }
 function fallbackAttrsFromColumns(row: any, prefix: "player" | "enemy"): Attrs | null {
   const get = (k: string) => Number(row?.[`${prefix}_${k}`]);
-  const v = ["str","dex","intt","wis","cha","con","luck"].map(get);
-  if (v.every((n) => Number.isFinite(n))) {
-    const [str,dex,intt,wis,cha,con,luck] = v;
+  const vals = ["str", "dex", "intt", "wis", "cha", "con", "luck"].map(get);
+  if (vals.every((n) => Number.isFinite(n))) {
+    const [str, dex, intt, wis, cha, con, luck] = vals;
     return { str, dex, intt, wis, cha, con, luck };
   }
   return null;
@@ -35,7 +48,6 @@ function extractAttrs(row: any, who: "player" | "enemy"): Attrs {
   const raw = pickFirst<any>(row, [`${who}_attrs`, `${who}_attributes`, `${who}Attrs`, `${who}Attributes`]);
   return parseMaybeJSON<Attrs>(raw) ?? fallbackAttrsFromColumns(row, who) ?? defaultAttrs();
 }
-
 function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
   const player: UnitState = {
     name: row.player_name ?? "Você",
@@ -54,63 +66,97 @@ function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
   return { player, enemy };
 }
 
-// ====== ATB: barra de ação por velocidade ======
-// velocidade base: escala com DEX e um pouco com LUCK
+// ===== velocidade = DEX + WIS =====
 function speedOf(u: UnitState) {
   const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
-  // retorna progresso por "tick"
-  return 0.2 + dex * 0.02 + wis * 0.02; // ~0.4..>2.0
+  return 0.4 + dex * 0.05 + wis * 0.03; // escala base
 }
 function rng(luck: number) {
   const base = Math.random();
   const luckBoost = clamp(luck, 0, 100) / 100;
   return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
 }
-function doAttack(atk: UnitState, def: UnitState, from: "player" | "enemy", to: "player" | "enemy"): CombatLine {
-  const { str = 1, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
+
+// ===== dano = STR + INT =====
+function attemptAttack(atk: UnitState, _def: UnitState) {
+  const { str = 0, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
   const roll = rng(luck);
-  if (roll.miss) return { text: `${atk.name} errou o ataque!`, dmg: 0, from, to, kind: "miss" };
-  const baseDmg = Math.max(1, Math.floor((str + intt) * 1.2 + (atk.level ?? 1) * 0.5));
-  const spread = 0.8 + roll.base * 0.4; // 0.8–1.2
-  let dmg = Math.floor(baseDmg * spread);
-  let kind: CombatLine["kind"] = "hit";
-  if (roll.crit) { dmg = Math.floor(dmg * 1.6); kind = "crit"; }
-  return { text: `Dano: ${dmg} (${kind})`, dmg, from, to, kind };
+  const miss = roll.miss;
+  const base = Math.max(1, Math.floor((str + intt) * 1.2 + (atk.level ?? 1) * 0.5));
+  const spread = 0.8 + roll.base * 0.4;
+  const crit = roll.crit && !miss;
+  const mult = crit ? 1.6 : 1.0;
+  const damage = miss ? 0 : Math.floor(base * spread * mult);
+  const kind: "hit" | "crit" | "miss" = miss ? "miss" : crit ? "crit" : "hit";
+  const formula = miss ? "miss" : `${base} * ${spread.toFixed(2)}${crit ? " * 1.6" : ""}`;
+  const desc = `Dano: ${damage} (${kind})`; // placeholders opcionais: YOU/TARGET
+  return { damage, kind, desc, formula };
 }
 
-// produz até N ações (não “turnos” fixos). O mais rápido pode agir várias vezes.
+// ===== ATB determinístico com desempate alternado =====
 function simulateActions(player: UnitState, enemy: UnitState, maxActions: number) {
   let p = { ...player }, e = { ...enemy };
-  let gP = 0, gE = 0; // gauges
-  const sP = speedOf(p), sE = speedOf(e);
-  const lines: CombatLine[] = [];
+  let barP = 0, barE = 0; // 0..100
+  const spdP = speedOf(p) * 100;
+  const spdE = speedOf(e) * 100;
+  const lines: UILog[] = [];
+  let lastActor: "player" | "enemy" = "enemy";
 
   while (lines.length < maxActions && p.hp > 0 && e.hp > 0) {
-    // preenche barras até alguém ultrapassar 1.0
-    while (gP < 1 && gE < 1) { gP += sP; gE += sE; }
-    if (gP >= gE) {
-      // player age
-      const ln = doAttack(p, e, "player", "enemy"); ln.source = "player";
-      e = { ...e, hp: clamp(e.hp - ln.dmg, 0, e.hpMax) };
-      lines.push(ln);
-      gP -= 1;
-    } else {
-      // enemy age
-      const ln = doAttack(e, p, "enemy", "player"); ln.source = "enemy";
-      p = { ...p, hp: clamp(p.hp - ln.dmg, 0, p.hpMax) };
-      lines.push(ln);
-      gE -= 1;
+    // avança até o próximo gatilho (100)
+    const needP = Math.max(0, 100 - barP);
+    const needE = Math.max(0, 100 - barE);
+    const dt = Math.min(needP / spdP, needE / spdE);
+    barP += spdP * dt;
+    barE += spdE * dt;
+
+    // player age?
+    if (barP >= 100 && (barP > barE || (barP === barE && lastActor === "enemy"))) {
+      barP -= 100;
+      const r = attemptAttack(p, e);
+      e = { ...e, hp: clamp(e.hp - r.damage, 0, e.hpMax) };
+      lines.push({
+        actor: "player",
+        type: "action_complete",
+        description: r.desc.replace("TARGET", e.name).replace("YOU", "Você"),
+        damage: r.damage,
+        damage_type: r.kind,
+        formula: r.formula,
+        target_hp_after: e.hp,
+      });
+      lastActor = "player";
+      if (e.hp <= 0 || lines.length >= maxActions) continue;
+    }
+
+    // inimigo age?
+    if (barE >= 100 && (barE > barP || (barE === barP && lastActor === "player"))) {
+      barE -= 100;
+      const r = attemptAttack(e, p);
+      p = { ...p, hp: clamp(p.hp - r.damage, 0, p.hpMax) };
+      lines.push({
+        actor: "enemy",
+        type: "action_complete",
+        description: r.desc.replace("YOU", e.name).replace("TARGET", "Você"),
+        damage: r.damage,
+        damage_type: r.kind,
+        formula: r.formula,
+        target_hp_after: p.hp,
+      });
+      lastActor = "enemy";
+      if (p.hp <= 0) continue;
     }
   }
+
   return { player: p, enemy: e, lines };
 }
 
-// ====== handler ======
+// ===== handler =====
 export async function POST(req: Request) {
   let body: StepsBody;
   try { body = await req.json(); } catch { return new NextResponse("payload inválido", { status: 400 }); }
+
   const battle_id = body.battle_id;
-  const wantedSteps = Math.max(1, Number(body.steps ?? 1)); // interpreta como número de AÇÕES reveladas
+  const wantedSteps = Math.max(1, Number(body.steps ?? 1)); // número de AÇÕES
   if (!battle_id) return new NextResponse("battle_id obrigatório", { status: 400 });
 
   const supabase = await getSupabaseServer();
@@ -128,9 +174,9 @@ export async function POST(req: Request) {
   if (!bt) return new NextResponse("Batalha não encontrada", { status: 404 });
   if (bt.status === "finished") return NextResponse.json({ battle: bt, lines: [] });
 
-  let { player, enemy } = rowToStates(bt);
+  const { player, enemy } = rowToStates(bt);
 
-  // simula AÇÕES, não turnos
+  // simula ações
   const r = simulateActions(player, enemy, wantedSteps);
   const outLines = r.lines;
 
@@ -142,7 +188,7 @@ export async function POST(req: Request) {
 
   const newCursor = Number(bt.cursor ?? 0) + outLines.length;
 
-  // >>> CORREÇÃO: persistir log para a coluna direita ler <<<
+  // persiste log em formato de UI
   const mergedLog = Array.isArray(bt.log) ? [...bt.log, ...outLines] : outLines;
 
   const { data: updated, error: updErr } = await supabase
@@ -153,7 +199,7 @@ export async function POST(req: Request) {
       enemy_hp: r.enemy.hp,
       status: finished ? "finished" : "active",
       winner: finished ? winner : bt.winner ?? null,
-      log: mergedLog, // agora o front pode usar battle.log
+      log: mergedLog,
     })
     .eq("id", bt.id)
     .select("*")
@@ -161,6 +207,5 @@ export async function POST(req: Request) {
 
   if (updErr) return new NextResponse(updErr.message, { status: 400 });
 
-  // retorna lines e battle com log atualizado
   return NextResponse.json({ battle: updated, lines: outLines });
 }
