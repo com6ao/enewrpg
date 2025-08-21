@@ -67,10 +67,10 @@ function rng(luck: number) {
   return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
 }
 function doAttack(atk: UnitState, def: UnitState, from: "player" | "enemy", to: "player" | "enemy"): CombatLine {
-  const { str = 1, luck = 0 } = atk.attrs ?? ({} as Attrs);
+  const { str = 1, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
   const roll = rng(luck);
   if (roll.miss) return { text: `${atk.name} errou o ataque!`, dmg: 0, from, to, kind: "miss" };
-  const baseDmg = Math.max(1, Math.floor(str * 1.5 + (atk.level ?? 1) * 0.5));
+  const baseDmg = Math.max(1, Math.floor((str + intt) * 1.2 + (atk.level ?? 1) * 0.5));
   const spread = 0.8 + roll.base * 0.4; // 0.8–1.2
   let dmg = Math.floor(baseDmg * spread);
   let kind: CombatLine["kind"] = "hit";
