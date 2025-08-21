@@ -89,61 +89,63 @@ function attemptAttack(atk: UnitState, _def: UnitState) {
   const damage = miss ? 0 : Math.floor(base * spread * mult);
   const kind: "hit" | "crit" | "miss" = miss ? "miss" : crit ? "crit" : "hit";
   const formula = miss ? "miss" : `${base} * ${spread.toFixed(2)}${crit ? " * 1.6" : ""}`;
-  const desc = `Dano: ${damage} (${kind})`; // placeholders opcionais: YOU/TARGET
+  const desc = `Dano: ${damage} (${kind})`;
   return { damage, kind, desc, formula };
 }
 
-// ===== ATB determinístico com desempate alternado =====
+// ===== ATB determinístico com desempate alternado; processa múltiplas ações no mesmo ciclo =====
 function simulateActions(player: UnitState, enemy: UnitState, maxActions: number) {
   let p = { ...player }, e = { ...enemy };
-  let barP = 0, barE = 0; // 0..100
+  let barP = 0, barE = 0;            // 0..100
   const spdP = speedOf(p) * 100;
   const spdE = speedOf(e) * 100;
   const lines: UILog[] = [];
   let lastActor: "player" | "enemy" = "enemy";
 
   while (lines.length < maxActions && p.hp > 0 && e.hp > 0) {
-    // avança até o próximo gatilho (100)
+    // avança até o próximo limiar 100 de alguém
     const needP = Math.max(0, 100 - barP);
     const needE = Math.max(0, 100 - barE);
     const dt = Math.min(needP / spdP, needE / spdE);
     barP += spdP * dt;
     barE += spdE * dt;
 
-    // player age?
-    if (barP >= 100 && (barP > barE || (barP === barE && lastActor === "enemy"))) {
-      barP -= 100;
-      const r = attemptAttack(p, e);
-      e = { ...e, hp: clamp(e.hp - r.damage, 0, e.hpMax) };
-      lines.push({
-        actor: "player",
-        type: "action_complete",
-        description: r.desc.replace("TARGET", e.name).replace("YOU", "Você"),
-        damage: r.damage,
-        damage_type: r.kind,
-        formula: r.formula,
-        target_hp_after: e.hp,
-      });
-      lastActor = "player";
-      if (e.hp <= 0 || lines.length >= maxActions) continue;
-    }
+    // processa todas as ações acumuladas neste instante
+    while ((barP >= 100 || barE >= 100) && lines.length < maxActions && p.hp > 0 && e.hp > 0) {
+      const actor: "player" | "enemy" =
+        barP > barE ? "player" :
+        barE > barP ? "enemy"  :
+        (lastActor === "enemy" ? "player" : "enemy");
 
-    // inimigo age?
-    if (barE >= 100 && (barE > barP || (barE === barP && lastActor === "player"))) {
-      barE -= 100;
-      const r = attemptAttack(e, p);
-      p = { ...p, hp: clamp(p.hp - r.damage, 0, p.hpMax) };
-      lines.push({
-        actor: "enemy",
-        type: "action_complete",
-        description: r.desc.replace("YOU", e.name).replace("TARGET", "Você"),
-        damage: r.damage,
-        damage_type: r.kind,
-        formula: r.formula,
-        target_hp_after: p.hp,
-      });
-      lastActor = "enemy";
-      if (p.hp <= 0) continue;
+      if (actor === "player") {
+        barP -= 100;
+        const r = attemptAttack(p, e);
+        e = { ...e, hp: clamp(e.hp - r.damage, 0, e.hpMax) };
+        lines.push({
+          actor: "player",
+          type: "action_complete",
+          description: r.desc.replace("TARGET", e.name).replace("YOU", "Você"),
+          damage: r.damage,
+          damage_type: r.kind,
+          formula: r.formula,
+          target_hp_after: e.hp,
+        });
+        lastActor = "player";
+      } else {
+        barE -= 100;
+        const r = attemptAttack(e, p);
+        p = { ...p, hp: clamp(p.hp - r.damage, 0, p.hpMax) };
+        lines.push({
+          actor: "enemy",
+          type: "action_complete",
+          description: r.desc.replace("YOU", e.name).replace("TARGET", "Você"),
+          damage: r.damage,
+          damage_type: r.kind,
+          formula: r.formula,
+          target_hp_after: p.hp,
+        });
+        lastActor = "enemy";
+      }
     }
   }
 
@@ -176,7 +178,6 @@ export async function POST(req: Request) {
 
   const { player, enemy } = rowToStates(bt);
 
-  // simula ações
   const r = simulateActions(player, enemy, wantedSteps);
   const outLines = r.lines;
 
@@ -187,8 +188,6 @@ export async function POST(req: Request) {
     finished ? "draw" : null;
 
   const newCursor = Number(bt.cursor ?? 0) + outLines.length;
-
-  // persiste log em formato de UI
   const mergedLog = Array.isArray(bt.log) ? [...bt.log, ...outLines] : outLines;
 
   const { data: updated, error: updErr } = await supabase
