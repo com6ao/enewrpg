@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
-import { resolveCombat, Attrs } from "@/lib/combat";
+
+type Attrs = { str:number; dex:number; intt:number; wis:number; cha:number; con:number; luck:number; level:number };
+
+const clamp = (n:number,a:number,b:number)=>Math.max(a,Math.min(b,n));
+const hpFrom = (level:number, con:number) => Math.max(1, 30 + 2*level + 3*con);
 
 export async function POST(req: Request) {
-  const { area } = await req.json();
+  const { area } = await req.json().catch(()=>({}));
   if (!area) return new NextResponse("Informe a área", { status: 400 });
 
   const supabase = await getSupabaseServer();
+
+  // auth
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return new NextResponse("Não autenticado", { status: 401 });
 
+  // personagem ativo
   const { data: profile } = await supabase
     .from("profiles").select("active_character_id").eq("id", user.id).maybeSingle();
-  if (!profile?.active_character_id)
-    return new NextResponse("Nenhum personagem ativo", { status: 400 });
+  if (!profile?.active_character_id) return new NextResponse("Nenhum personagem ativo", { status: 400 });
 
   const { data: char } = await supabase
     .from("characters")
@@ -22,53 +28,68 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (!char) return new NextResponse("Personagem não encontrado", { status: 400 });
 
+  // sorteia inimigo por categoria
   const { data: enemies } = await supabase
-    .from("enemies")
-    .select("*")
-    .eq("category", area);
-  if (!enemies?.length) return new NextResponse("Nenhum inimigo nesta área", { status: 400 });
+    .from("enemies").select("*").eq("category", area);
+  if (!enemies?.length) return new NextResponse("Nenhum inimigo para esta área", { status: 400 });
+  const enemy = enemies[Math.floor(Math.random()*enemies.length)];
 
-  const enemy = enemies[Math.floor(Math.random() * enemies.length)];
-
-  const playerAttrs: Attrs = {
-    level: char.level, str: char.str, dex: char.dex, intt: char.intt,
-    wis: char.wis, cha: char.cha, con: char.con, luck: char.luck,
+  // attrs
+  const player_attrs: Attrs = {
+    level: Number(char.level ?? 1),
+    str: Number(char.str ?? 5),
+    dex: Number(char.dex ?? 5),
+    intt: Number(char.intt ?? 5),
+    wis: Number(char.wis ?? 5),
+    cha: Number(char.cha ?? 5),
+    con: Number(char.con ?? 5),
+    luck: Number(char.luck ?? 5),
   };
-  const enemyAttrs: Attrs & { name: string } = {
-    level: enemy.level, str: enemy.str, dex: enemy.dex, intt: enemy.intt,
-    wis: enemy.wis, cha: enemy.cha, con: enemy.con, luck: enemy.luck, name: enemy.name,
+  const enemy_attrs: Attrs = {
+    level: Number(enemy.level ?? 1),
+    str: Number(enemy.str ?? 5),
+    dex: Number(enemy.dex ?? 5),
+    intt: Number(enemy.intt ?? 5),
+    wis: Number(enemy.wis ?? 5),
+    cha: Number(enemy.cha ?? 5),
+    con: Number(enemy.con ?? 5),
+    luck: Number(enemy.luck ?? 5),
   };
 
-  const outcome = await resolveCombat(playerAttrs, enemyAttrs);
-  const raw: any = outcome as any;
-  const log: any[] = Array.isArray(raw?.log) ? raw.log : [];
+  // HPs iniciais
+  const pHpMax = hpFrom(player_attrs.level, player_attrs.con);
+  const eHpMax = hpFrom(enemy_attrs.level, enemy_attrs.con);
 
-  const playerMax = 30 + playerAttrs.level * 5 + playerAttrs.con * 1;
-  const enemyMax  = 30 + enemyAttrs.level  * 5 + enemyAttrs.con  * 1;
-
+  // cria batalha
   const { data: inserted, error } = await supabase
     .from("battles")
     .insert({
       user_id: user.id,
-      character_id: char.id,
       area,
-      enemy_id: enemy.id,
-      enemy_name: enemy.name,
-      player_hp: playerMax,
-      player_hp_max: playerMax,
-      enemy_hp: enemyMax,
-      enemy_hp_max: enemyMax,
-      log,
       status: "active",
       cursor: 0,
+      winner: null,
+      player_name: "Você",
+      enemy_name: enemy.name,
+      player_level: player_attrs.level,
+      enemy_level: enemy_attrs.level,
+      player_hp: pHpMax,
+      player_hp_max: pHpMax,
+      enemy_hp: eHpMax,
+      enemy_hp_max: eHpMax,
+      player_attrs,
+      enemy_attrs,
+      log: [],
+      gauges: {},
     })
-    .select("*").single();
+    .select("*")
+    .single();
 
   if (error) return new NextResponse(error.message, { status: 400 });
 
   return NextResponse.json({
     battle: inserted,
-    player_attrs: playerAttrs,
-    enemy_attrs: enemyAttrs,
+    player_attrs,
+    enemy_attrs,
   });
 }
