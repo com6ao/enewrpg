@@ -59,7 +59,7 @@ function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
 function speedOf(u: UnitState) {
   const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
   // retorna progresso por "tick"
-  return 0.2 + dex * 0.2 + wis * 0.02; // ~0.4..>2.0
+  return 0.2 + dex * 0.02 + wis * 0.02; // ~0.4..>2.0
 }
 function rng(luck: number) {
   const base = Math.random();
