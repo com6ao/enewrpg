@@ -1,70 +1,113 @@
+// app/api/battle/start/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-type Attrs = { str:number; dex:number; intt:number; wis:number; cha:number; con:number; luck:number; level:number };
+type Attrs = {
+  str: number; dex: number; intt: number; wis: number;
+  cha: number; con: number; luck: number;
+  level: number; hp: number; hpmax: number;
+};
 
-const clamp = (n:number,a:number,b:number)=>Math.max(a,Math.min(b,n));
-const hpFrom = (level:number, con:number) => Math.max(1, 30 + 2*level + 3*con);
+type UnitState = {
+  name: string;
+  level: number;
+  hp: number;
+  hpmax: number;
+  attrs: Attrs;
+};
 
+// ===== helpers =====
+function defaultAttrs(): Attrs {
+  return { str: 5, dex: 5, intt: 5, wis: 5, cha: 5, con: 5, luck: 5, level: 1, hp: 10, hpmax: 10 };
+}
+
+function buildAttrsFromCharacter(char: any): Attrs {
+  return {
+    str: char.str ?? 5,
+    dex: char.dex ?? 5,
+    intt: char.intt ?? 5,
+    wis: char.wis ?? 5,
+    cha: char.cha ?? 5,
+    con: char.con ?? 5,
+    luck: char.luck ?? 5,
+    level: char.level ?? 1,
+    hp: char.hp ?? 10,
+    hpmax: char.hpmax ?? 10,
+  };
+}
+
+function buildAttrsFromEnemy(enemy: any): Attrs {
+  return {
+    str: enemy.str ?? 5,
+    dex: enemy.dex ?? 5,
+    intt: enemy.intt ?? 5,
+    wis: enemy.wis ?? 5,
+    cha: enemy.cha ?? 5,
+    con: enemy.con ?? 5,
+    luck: enemy.luck ?? 5,
+    level: enemy.level ?? 1,
+    hp: enemy.hp ?? 10,
+    hpmax: enemy.hp ?? 10,
+  };
+}
+
+// ===== handler =====
 export async function POST(req: Request) {
-  const { area } = await req.json().catch(()=>({}));
-  if (!area) return new NextResponse("Informe a área", { status: 400 });
+  const { area } = await req.json().catch(() => ({}));
+  if (!area) return NextResponse.json({ error: "Informe a área." }, { status: 400 });
 
   const supabase = await getSupabaseServer();
 
-  // auth
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return new NextResponse("Não autenticado", { status: 401 });
+  // usuário autenticado
+  const { data: user } = await supabase.auth.getUser();
+  if (!user?.user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  // personagem ativo
+  // perfil ativo
   const { data: profile } = await supabase
-    .from("profiles").select("active_character_id").eq("id", user.id).maybeSingle();
-  if (!profile?.active_character_id) return new NextResponse("Nenhum personagem ativo", { status: 400 });
+    .from("profiles")
+    .select("id, active_character_id")
+    .eq("id", user.user.id)
+    .single();
 
-  const { data: char } = await supabase
+  if (!profile?.active_character_id) {
+    return NextResponse.json({ error: "Nenhum personagem ativo." }, { status: 400 });
+  }
+
+  // personagem
+  const { data: character } = await supabase
     .from("characters")
     .select("*")
     .eq("id", profile.active_character_id)
-    .maybeSingle();
-  if (!char) return new NextResponse("Personagem não encontrado", { status: 400 });
+    .single();
 
-  // sorteia inimigo por categoria
+  if (!character) {
+    return NextResponse.json({ error: "Personagem não encontrado." }, { status: 400 });
+  }
+
+  const player_attrs = buildAttrsFromCharacter(character);
+
+  // inimigo
   const { data: enemies } = await supabase
-    .from("enemies").select("*").eq("category", area);
-  if (!enemies?.length) return new NextResponse("Nenhum inimigo para esta área", { status: 400 });
-  const enemy = enemies[Math.floor(Math.random()*enemies.length)];
+    .from("enemies")
+    .select("*")
+    .eq("category", area);
 
-  // attrs
-  const player_attrs: Attrs = {
-    level: Number(char.level ?? 1),
-    str: Number(char.str ?? 5),
-    dex: Number(char.dex ?? 5),
-    intt: Number(char.intt ?? 5),
-    wis: Number(char.wis ?? 5),
-    cha: Number(char.cha ?? 5),
-    con: Number(char.con ?? 5),
-    luck: Number(char.luck ?? 5),
-  };
-  const enemy_attrs: Attrs = {
-    level: Number(enemy.level ?? 1),
-    str: Number(enemy.str ?? 5),
-    dex: Number(enemy.dex ?? 5),
-    intt: Number(enemy.intt ?? 5),
-    wis: Number(enemy.wis ?? 5),
-    cha: Number(enemy.cha ?? 5),
-    con: Number(enemy.con ?? 5),
-    luck: Number(enemy.luck ?? 5),
-  };
+  if (!enemies?.length) {
+    return NextResponse.json({ error: "Nenhum inimigo para esta área." }, { status: 400 });
+  }
+  const enemy = enemies[Math.floor(Math.random() * enemies.length)];
+  const enemy_attrs = buildAttrsFromEnemy(enemy);
 
-  // HPs iniciais
-  const pHpMax = hpFrom(player_attrs.level, player_attrs.con);
-  const eHpMax = hpFrom(enemy_attrs.level, enemy_attrs.con);
+  // valores de HP
+  const pHpMax = player_attrs.hpmax;
+  const eHpMax = enemy_attrs.hpmax;
 
-  // cria batalha
+  // criar batalha
   const { data: inserted, error } = await supabase
     .from("battles")
     .insert({
-      user_id: user.id,
+      user_id: user.user.id,
+      character_id: profile.active_character_id, // IMPORTANTE
       area,
       status: "active",
       cursor: 0,
@@ -85,7 +128,9 @@ export async function POST(req: Request) {
     .select("*")
     .single();
 
-  if (error) return new NextResponse(error.message, { status: 400 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
   return NextResponse.json({
     battle: inserted,
