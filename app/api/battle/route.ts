@@ -2,140 +2,139 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-/** ===== Tipos ===== */
-type Attrs = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number };
-type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs };
-type CombatLine = { text: string; dmg: number; from: "player" | "enemy"; to: "player" | "enemy"; kind: "hit" | "crit" | "miss"; source?: "player" | "enemy" };
+type Attrs = {
+  str: number; dex: number; intt: number; wis: number;
+  cha: number; con: number; luck: number;
+  level: number; hp: number; hpmax: number;
+};
 
-const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
-const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+type UnitState = {
+  name: string;
+  level: number;
+  hp: number;
+  hpmax: number;
+  attrs: Attrs;
+};
 
-/** ===== Fórmulas ===== */
-function hpFrom(level: number, con: number) {
-  return Math.max(1, Math.floor(30 + level * 2 + con * 3));
-}
-function speedOf(u: UnitState) {
-  const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
-  return 0.4 + dex * 0.05 + wis * 0.03;
-}
-function rng(luck: number) {
-  const base = Math.random();
-  const luckBoost = clamp(luck, 0, 100) / 100;
-  return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
-}
-function doAttack(atk: UnitState, def: UnitState, from: "player" | "enemy", to: "player" | "enemy"): CombatLine {
-  const { str = 0, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
-  const roll = rng(luck);
-  if (roll.miss) return { text: `${atk.name} errou o ataque!`, dmg: 0, from, to, kind: "miss" };
-  const baseDmg = Math.max(1, Math.floor((str + intt) * 1.2 + (atk.level ?? 1) * 0.5));
-  const spread = 0.8 + roll.base * 0.4;
-  let dmg = Math.floor(baseDmg * spread);
-  let kind: CombatLine["kind"] = "hit";
-  if (roll.crit) { dmg = Math.floor(dmg * 1.6); kind = "crit"; }
-  return { text: `Dano: ${dmg} (${kind})`, dmg, from, to, kind };
-}
-function resolveCombat(player: UnitState, enemy: UnitState) {
-  let p = { ...player }, e = { ...enemy };
-  let gP = 0, gE = 0;
-  const sP = speedOf(p), sE = speedOf(e);
-  const log: CombatLine[] = [];
-  const MAX_ACTIONS = 200;
-
-  while (p.hp > 0 && e.hp > 0 && log.length < MAX_ACTIONS) {
-    while (gP < 1 && gE < 1) { gP += sP; gE += sE; }
-    if (gP >= gE) {
-      const ln = doAttack(p, e, "player", "enemy"); ln.source = "player";
-      e = { ...e, hp: clamp(e.hp - ln.dmg, 0, e.hpMax) };
-      log.push(ln);
-      gP -= 1;
-    } else {
-      const ln = doAttack(e, p, "enemy", "player"); ln.source = "enemy";
-      p = { ...p, hp: clamp(p.hp - ln.dmg, 0, p.hpMax) };
-      log.push(ln);
-      gE -= 1;
-    }
-  }
-  const finished = p.hp <= 0 || e.hp <= 0;
-  const winner = finished ? (p.hp > 0 ? "player" : e.hp > 0 ? "enemy" : "draw") : null;
-  const summary = { winner, player_hp_start: player.hpMax, enemy_hp_start: enemy.hpMax, player_hp_end: p.hp, enemy_hp_end: e.hp, actions: log.length };
-  return { summary, log };
+// ===== helpers =====
+function defaultAttrs(): Attrs {
+  return { str: 5, dex: 5, intt: 5, wis: 5, cha: 5, con: 5, luck: 5, level: 1, hp: 10, hpmax: 10 };
 }
 
-/** Helpers para montar UnitState */
-function buildUnitFromCharacter(char: any): UnitState {
-  const attrs: Attrs = {
-    str: num(char?.str, 5),
-    dex: num(char?.dex, 5),
-    intt: num(char?.intt, 5),
-    wis: num(char?.wis, 5),
-    cha: num(char?.cha, 5),
-    con: num(char?.con, 5),
-    luck: num(char?.luck, 5),
+function buildAttrsFromCharacter(char: any): Attrs {
+  return {
+    str: char.str ?? 5,
+    dex: char.dex ?? 5,
+    intt: char.intt ?? 5,
+    wis: char.wis ?? 5,
+    cha: char.cha ?? 5,
+    con: char.con ?? 5,
+    luck: char.luck ?? 5,
+    level: char.level ?? 1,
+    hp: char.hp ?? 10,
+    hpmax: char.hpmax ?? 10,
   };
-  const level = num(char?.level, 1);
-  const hpMax = hpFrom(level, attrs.con);
-  return { name: char?.name ?? "Você", level, hp: hpMax, hpMax, attrs };
-}
-function buildUnitFromEnemy(enemy: any): UnitState {
-  const attrs: Attrs = {
-    str: num(enemy?.str, 5),
-    dex: num(enemy?.dex, 5),
-    intt: num(enemy?.intt, 5),
-    wis: num(enemy?.wis, 5),
-    cha: num(enemy?.cha, 5),
-    con: num(enemy?.con, 5),
-    luck: num(enemy?.luck, 5),
-  };
-  const level = num(enemy?.level, 1);
-  const hpMax = hpFrom(level, attrs.con);
-  return { name: enemy?.name ?? "Inimigo", level, hp: hpMax, hpMax, attrs };
 }
 
-/** ===== Handler ===== */
+function buildAttrsFromEnemy(enemy: any): Attrs {
+  return {
+    str: enemy.str ?? 5,
+    dex: enemy.dex ?? 5,
+    intt: enemy.intt ?? 5,
+    wis: enemy.wis ?? 5,
+    cha: enemy.cha ?? 5,
+    con: enemy.con ?? 5,
+    luck: enemy.luck ?? 5,
+    level: enemy.level ?? 1,
+    hp: enemy.hp ?? 10,
+    hpmax: enemy.hp ?? 10,
+  };
+}
+
+// ===== handler =====
 export async function POST(req: Request) {
   const { area } = await req.json().catch(() => ({}));
-  if (!area) return new NextResponse("Informe a área", { status: 400 });
+  if (!area) return NextResponse.json({ error: "Informe a área." }, { status: 400 });
 
   const supabase = await getSupabaseServer();
 
-  // usuário
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return new NextResponse("Não autenticado", { status: 401 });
+  // usuário autenticado
+  const { data: user } = await supabase.auth.getUser();
+  if (!user?.user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  // profile -> personagem ativo
+  // perfil ativo
   const { data: profile } = await supabase
     .from("profiles")
-    .select("active_character_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!profile?.active_character_id) return new NextResponse("Nenhum personagem ativo", { status: 400 });
+    .select("id, active_character_id")
+    .eq("id", user.user.id)
+    .single();
+
+  if (!profile?.active_character_id) {
+    return NextResponse.json({ error: "Nenhum personagem ativo." }, { status: 400 });
+  }
 
   // personagem
-  const { data: char } = await supabase
+  const { data: character } = await supabase
     .from("characters")
     .select("*")
     .eq("id", profile.active_character_id)
-    .maybeSingle();
-  if (!char) return new NextResponse("Personagem não encontrado", { status: 400 });
+    .single();
 
-  // inimigo por área
+  if (!character) {
+    return NextResponse.json({ error: "Personagem não encontrado." }, { status: 400 });
+  }
+
+  const player_attrs = buildAttrsFromCharacter(character);
+
+  // inimigo
   const { data: enemies } = await supabase
     .from("enemies")
     .select("*")
     .eq("category", area);
-  if (!enemies?.length) return new NextResponse("Nenhum inimigo para esta área", { status: 400 });
 
+  if (!enemies?.length) {
+    return NextResponse.json({ error: "Nenhum inimigo para esta área." }, { status: 400 });
+  }
   const enemy = enemies[Math.floor(Math.random() * enemies.length)];
+  const enemy_attrs = buildAttrsFromEnemy(enemy);
 
-  // monta estados
-  const playerState = buildUnitFromCharacter(char);
-  const enemyState  = buildUnitFromEnemy(enemy);
+  // valores de HP
+  const pHpMax = player_attrs.hpmax;
+  const eHpMax = enemy_attrs.hpmax;
 
-  const { summary, log } = resolveCombat(playerState, enemyState);
+  // criar batalha
+  const { data: inserted, error } = await supabase
+    .from("battles")
+    .insert({
+      user_id: user.user.id,
+      character_id: profile.active_character_id, // IMPORTANTE
+      area,
+      status: "active",
+      cursor: 0,
+      winner: null,
+      player_name: "Você",
+      enemy_name: enemy.name,
+      player_level: player_attrs.level,
+      enemy_level: enemy_attrs.level,
+      player_hp: pHpMax,
+      player_hp_max: pHpMax,
+      enemy_hp: eHpMax,
+      enemy_hp_max: eHpMax,
+      player_attrs,
+      enemy_attrs,
+      log: [],
+      gauges: {},
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
   return NextResponse.json({
-    enemy: { id: enemy.id, name: enemy.name, level: enemy.level },
-    result: summary,
-    log,
+    battle: inserted,
+    player_attrs,
+    enemy_attrs,
   });
 }
