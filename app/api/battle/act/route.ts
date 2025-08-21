@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
+/** ===== TIPOS ===== */
 type Attrs = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number };
 type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs };
 
@@ -20,9 +21,10 @@ type UILog = {
 };
 
 type StepsBody = { battle_id?: string; steps?: number };
+
 const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
-// ---------- helpers ----------
+/** ===== helpers para ler attrs de forma tolerante ===== */
 function parseMaybeJSON<T>(v: any): T | null {
   if (v == null) return null;
   if (typeof v === "object") return v as T;
@@ -65,7 +67,8 @@ function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
   return { player, enemy };
 }
 
-// ---------- formulas ----------
+/** ===== fórmulas ===== */
+// velocidade baseada em DEX + WIS
 function speedOf(u: UnitState) {
   const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
   return 0.4 + dex * 0.05 + wis * 0.03;
@@ -75,6 +78,7 @@ function rng(luck: number) {
   const luckBoost = clamp(luck, 0, 100) / 100;
   return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
 }
+// dano com STR + INT
 function attemptAttack(atk: UnitState) {
   const { str = 0, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
   const roll = rng(luck);
@@ -90,7 +94,7 @@ function attemptAttack(atk: UnitState) {
   return { damage, kind, desc, formula };
 }
 
-// ---------- simulator (ATB com empate alternado) ----------
+/** ===== simulador ATB com empate alternado + telemetria das barras ===== */
 function simulateActions(player: UnitState, enemy: UnitState, maxActions: number) {
   let p = { ...player }, e = { ...enemy };
   let barP = 0, barE = 0; // 0..100
@@ -156,7 +160,7 @@ function simulateActions(player: UnitState, enemy: UnitState, maxActions: number
   return { player: p, enemy: e, lines, gauges: { player: barP, enemy: barE } };
 }
 
-// ---------- handler ----------
+/** ===== handler ===== */
 export async function POST(req: Request) {
   let body: StepsBody;
   try { body = await req.json(); } catch { return new NextResponse("payload inválido", { status: 400 }); }
@@ -182,7 +186,6 @@ export async function POST(req: Request) {
 
   const { player, enemy } = rowToStates(bt);
   const r = simulateActions(player, enemy, wantedSteps);
-  const outLines = r.lines;
 
   const finished = r.player.hp <= 0 || r.enemy.hp <= 0;
   const winner =
@@ -190,8 +193,8 @@ export async function POST(req: Request) {
     finished && r.enemy.hp > 0 ? "enemy" :
     finished ? "draw" : null;
 
-  const newCursor = Number(bt.cursor ?? 0) + outLines.length;
-  const mergedLog = Array.isArray(bt.log) ? [...bt.log, ...outLines] : outLines;
+  const newCursor = Number(bt.cursor ?? 0) + r.lines.length;
+  const mergedLog = Array.isArray(bt.log) ? [...bt.log, ...r.lines] : r.lines;
 
   const { data: updated, error: updErr } = await supabase
     .from("battles")
@@ -202,7 +205,7 @@ export async function POST(req: Request) {
       status: finished ? "finished" : "active",
       winner: finished ? winner : bt.winner ?? null,
       log: mergedLog,
-      gauges: r.gauges, // <-- salva jsonb { player, enemy }
+      gauges: r.gauges, // jsonb (crie com: alter table public.battles add column if not exists gauges jsonb default '{}'::jsonb not null;)
     })
     .eq("id", bt.id)
     .select("*")
@@ -210,9 +213,5 @@ export async function POST(req: Request) {
 
   if (updErr) return new NextResponse(updErr.message, { status: 400 });
 
-  return NextResponse.json({
-    battle: updated,
-    lines: outLines,
-    gauges: r.gauges,
-  });
+  return NextResponse.json({ battle: updated, lines: r.lines, gauges: r.gauges });
 }
