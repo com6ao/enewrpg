@@ -1,119 +1,159 @@
-export type Attrs = {
-  str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; level: number;
-};
+// app/api/battle/act/route.ts
+import { NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabaseServer";
 
-export type BattleLogEntry = {
-  actor: "player" | "enemy";
-  type: "action_complete";
-  description: string;
-  damage: number;
-  damage_type: "physical" | "magical" | "mental";
-  formula: { base: number; atk: number; def: number; rand: number; crit: boolean; mult: number };
-  target_hp_after: number;
-};
+// ===== tipos =====
+type Attrs = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number };
+type UnitState = { name: string; level: number; hp: number; hpMax: number; attrs: Attrs };
+type CombatLine = { text: string; dmg: number; from: "player" | "enemy"; to: "player" | "enemy"; kind: "hit" | "crit" | "miss"; source?: "player" | "enemy" };
+type StepsBody = { battle_id?: string; steps?: number };
 
-export function calcHP(c: Attrs) { return 30 + c.level * 5 + c.con * 1; }
-export function atkSpeed(c: Attrs) { return Math.max(c.dex, c.wis); }
-export function resistPhysicalMelee(c: Attrs) { return c.str + c.con * 0.5; }
-export function resistPhysicalRanged(c: Attrs) { return c.dex + c.con * 0.5; }
-export function resistMagic(c: Attrs) { return c.intt + c.con * 0.5; }
-export function resistMental(c: Attrs) { return c.wis + c.con * 0.5; }
-export function dodgeChance(c: Attrs) { return c.luck + c.dex * 0.5; }
-export function critChance(c: Attrs)  { return c.luck; }
-export function physicalMeleeAttack(c: Attrs) { return c.str + c.dex * 0.5; }
-export function physicalRangedAttack(c: Attrs) { return c.dex + c.str * 0.5; }
-export function magicAttack(c: Attrs) { return c.intt; }
-export function mentalAttack(c: Attrs) { return c.wis; }
+const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
 
-export function accuracyPercent(attacker: Attrs, defender: Attrs) {
-  const mainAtk = Math.max(attacker.str, attacker.dex, attacker.intt);
-  const mainDef = Math.max(defender.str, defender.dex, defender.intt);
-  let base = 100 + (attacker.level - defender.level) * 5 + (mainAtk - mainDef) * 2;
-  return Math.min(100, Math.max(0, base));
+// ===== atributos: leitura tolerante =====
+function parseMaybeJSON<T>(v: any): T | null {
+  if (v == null) return null;
+  if (typeof v === "object") return v as T;
+  if (typeof v === "string") { try { return JSON.parse(v) as T; } catch { return null; } }
+  return null;
+}
+function pickFirst<T = any>(row: any, keys: string[]): T | null {
+  for (const k of keys) if (row && row[k] != null) return row[k] as T;
+  return null;
+}
+function fallbackAttrsFromColumns(row: any, prefix: "player" | "enemy"): Attrs | null {
+  const get = (k: string) => Number(row?.[`${prefix}_${k}`]);
+  const vals = ["str", "dex", "intt", "wis", "cha", "con", "luck"].map(get);
+  if (vals.every((n) => Number.isFinite(n))) {
+    const [str, dex, intt, wis, cha, con, luck] = vals;
+    return { str, dex, intt, wis, cha, con, luck };
+  }
+  return null;
+}
+function defaultAttrs(): Attrs { return { str: 5, dex: 5, intt: 5, wis: 5, cha: 5, con: 5, luck: 5 }; }
+function extractAttrs(row: any, who: "player" | "enemy"): Attrs {
+  const raw = pickFirst<any>(row, [`${who}_attrs`, `${who}_attributes`, `${who}Attrs`, `${who}Attributes`]);
+  return parseMaybeJSON<Attrs>(raw) ?? fallbackAttrsFromColumns(row, who) ?? defaultAttrs();
+}
+function rowToStates(row: any): { player: UnitState; enemy: UnitState } {
+  const player: UnitState = {
+    name: row.player_name ?? "Você",
+    level: Number(row.player_level ?? 1),
+    hp: Number(row.player_hp ?? 0),
+    hpMax: Number(row.player_hp_max ?? row.player_hp ?? 1),
+    attrs: extractAttrs(row, "player"),
+  };
+  const enemy: UnitState = {
+    name: row.enemy_name ?? "Inimigo",
+    level: Number(row.enemy_level ?? 1),
+    hp: Number(row.enemy_hp ?? 0),
+    hpMax: Number(row.enemy_hp_max ?? row.enemy_hp ?? 1),
+    attrs: extractAttrs(row, "enemy"),
+  };
+  return { player, enemy };
 }
 
-export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string }) {
-  let playerHP = calcHP(player);
-  let enemyHP  = calcHP(enemy);
+// ===== ATB: velocidade = DEX + WIS =====
+function speedOf(u: UnitState) {
+  const { dex = 0, wis = 0 } = u.attrs ?? ({} as Attrs);
+  return 0.4 + dex * 0.05 + wis * 0.03;
+}
+function rng(luck: number) {
+  const base = Math.random();
+  const luckBoost = clamp(luck, 0, 100) / 100;
+  return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
+}
+// ===== dano = STR + INT =====
+function doAttack(atk: UnitState, def: UnitState, from: "player" | "enemy", to: "player" | "enemy"): CombatLine {
+  const { str = 1, intt = 0, luck = 0 } = atk.attrs ?? ({} as Attrs);
+  const roll = rng(luck);
+  if (roll.miss) return { text: `${atk.name} errou o ataque!`, dmg: 0, from, to, kind: "miss" };
 
-  let barP = 0, barE = 0;
-  const spP = atkSpeed(player), spE = atkSpeed(enemy);
+  const baseDmg = Math.max(1, Math.floor((str + intt) * 1.2 + (atk.level ?? 1) * 0.5));
+  const spread = 0.8 + roll.base * 0.4;
+  let dmg = Math.floor(baseDmg * spread);
+  let kind: CombatLine["kind"] = "hit";
+  if (roll.crit) { dmg = Math.floor(dmg * 1.6); kind = "crit"; }
 
-  const log: BattleLogEntry[] = [];
-
-  while (playerHP > 0 && enemyHP > 0) {
-    barP += spP; barE += spE;
-
-    if (barP >= 100) {
-      barP -= 100;
-      const r = attemptAttack(player, enemy);
-      enemyHP = Math.max(0, enemyHP - r.damage);
-      log.push({
-        actor: "player",
-        type: "action_complete",
-        description: r.desc.replace("TARGET", enemy.name).replace("YOU", "Você"),
-        damage: r.damage,
-        damage_type: r.kind,
-        formula: r.formula,
-        target_hp_after: enemyHP,
-      });
-      if (enemyHP <= 0) break;
-    }
-
-    if (barE >= 100) {
-      barE -= 100;
-      const r = attemptAttack(enemy, player);
-      playerHP = Math.max(0, playerHP - r.damage);
-      log.push({
-        actor: "enemy",
-        type: "action_complete",
-        // aqui o atacante é o inimigo: YOU -> nome do inimigo, TARGET -> Você
-        description: r.desc.replace("YOU", enemy.name).replace("TARGET", "Você"),
-        damage: r.damage,
-        damage_type: r.kind,
-        formula: r.formula,
-        target_hp_after: playerHP,
-      });
-      if (playerHP <= 0) break;
-    }
-  }
-
-  return { result: playerHP > 0 ? "win" : "lose", log };
+  return { text: `Dano: ${dmg} (${kind})`, dmg, from, to, kind };
 }
 
-function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
-  if (Math.random() * 100 > accuracyPercent(attacker, defender)) {
-    return { damage: 0, kind: "physical" as const,
-      formula: { base:0, atk:0, def:0, rand:0, crit:false, mult:1 },
-      desc: "YOU errou o ataque." };
+// simula AÇÕES; o mais rápido pode agir várias vezes
+function simulateActions(player: UnitState, enemy: UnitState, maxActions: number) {
+  let p = { ...player }, e = { ...enemy };
+  let gP = 0, gE = 0;
+  const sP = speedOf(p), sE = speedOf(e);
+  const lines: CombatLine[] = [];
+
+  while (lines.length < maxActions && p.hp > 0 && e.hp > 0) {
+    while (gP < 1 && gE < 1) { gP += sP; gE += sE; }
+    if (gP >= gE) {
+      const ln = doAttack(p, e, "player", "enemy"); ln.source = "player";
+      e = { ...e, hp: clamp(e.hp - ln.dmg, 0, e.hpMax) };
+      lines.push(ln);
+      gP -= 1;
+    } else {
+      const ln = doAttack(e, p, "enemy", "player"); ln.source = "enemy";
+      p = { ...p, hp: clamp(p.hp - ln.dmg, 0, p.hpMax) };
+      lines.push(ln);
+      gE -= 1;
+    }
   }
-  if (Math.random() * 100 < dodgeChance(defender)) {
-    return { damage: 0, kind: "physical" as const,
-      formula: { base:0, atk:0, def:0, rand:0, crit:false, mult:1 },
-      desc: "TARGET desviou do ataque de YOU." };
-  }
+  return { player: p, enemy: e, lines };
+}
 
-  const atkPhysical = Math.max(physicalMeleeAttack(attacker), physicalRangedAttack(attacker));
-  const atkMagical  = magicAttack(attacker);
-  const atkMental   = mentalAttack(attacker);
+// ===== handler =====
+export async function POST(req: Request) {
+  let body: StepsBody;
+  try { body = await req.json(); } catch { return new NextResponse("payload inválido", { status: 400 }); }
+  const battle_id = body.battle_id;
+  const wantedSteps = Math.max(1, Number(body.steps ?? 1)); // número de AÇÕES
+  if (!battle_id) return new NextResponse("battle_id obrigatório", { status: 400 });
 
-  let kind: "physical" | "magical" | "mental" = "physical";
-  let atk = atkPhysical;
-  let def = resistPhysicalMelee(defender);
+  const supabase = await getSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return new NextResponse("Não autenticado", { status: 401 });
 
-  if (atkMagical >= atkPhysical && atkMagical >= atkMental) {
-    kind = "magical"; atk = atkMagical; def = resistMagic(defender);
-  } else if (atkMental >= atkPhysical && atkMental >= atkMagical) {
-    kind = "mental";  atk = atkMental;  def = resistMental(defender);
-  }
+  const { data: bt, error: btErr } = await supabase
+    .from("battles")
+    .select("*")
+    .eq("id", battle_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  const base = atk;
-  const rand = Math.floor(Math.random() * 4); // 0..3
-  const crit = Math.random() * 100 < critChance(attacker);
-  const mult = crit ? 1.5 : 1;
+  if (btErr) return new NextResponse(btErr.message, { status: 400 });
+  if (!bt) return new NextResponse("Batalha não encontrada", { status: 404 });
+  if (bt.status === "finished") return NextResponse.json({ battle: bt, lines: [] });
 
-  let dmg = Math.max(1, Math.floor((base + rand) * mult) - Math.floor(def));
-  const desc = `YOU causou ${dmg} de dano em TARGET.`;
+  const { player, enemy } = rowToStates(bt);
 
-  return { damage: dmg, kind, formula: { base, atk, def: Math.floor(def), rand, crit, mult }, desc };
+  const r = simulateActions(player, enemy, wantedSteps);
+  const outLines = r.lines;
+
+  const finished = r.player.hp <= 0 || r.enemy.hp <= 0;
+  const winner =
+    finished && r.player.hp > 0 ? "player" :
+    finished && r.enemy.hp > 0 ? "enemy" :
+    finished ? "draw" : null;
+
+  const newCursor = Number(bt.cursor ?? 0) + outLines.length;
+  const mergedLog = Array.isArray(bt.log) ? [...bt.log, ...outLines] : outLines;
+
+  const { data: updated, error: updErr } = await supabase
+    .from("battles")
+    .update({
+      cursor: newCursor,
+      player_hp: r.player.hp,
+      enemy_hp: r.enemy.hp,
+      status: finished ? "finished" : "active",
+      winner: finished ? winner : bt.winner ?? null,
+      log: mergedLog,
+    })
+    .eq("id", bt.id)
+    .select("*")
+    .maybeSingle();
+
+  if (updErr) return new NextResponse(updErr.message, { status: 400 });
+
+  return NextResponse.json({ battle: updated, lines: outLines });
 }
