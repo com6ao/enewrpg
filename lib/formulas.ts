@@ -33,7 +33,7 @@ export const resistMental          = (a: Attr) => a.wis + a.con;
 export const resistCrit            = (a: Attr) => a.cha;
 
 // ⏩ Velocidades
-export const attackSpeed = (a: Attr) => a.dex;
+export const attackSpeed = (a: Attr) => a.dex + a.wis;
 export const castSpeed   = (a: Attr) => a.wis;
 
 // 🎯 Crítico / Reduções
