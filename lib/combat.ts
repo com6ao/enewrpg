@@ -1,76 +1,50 @@
-// lib/combat.ts
 export type Attrs = {
-  level: number;
-  str: number;
-  dex: number;
-  intt: number; // INT
-  wis: number;
-  cha: number;
-  con: number;
-  luck: number;
+  str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number; level: number;
 };
 
-export type CombatLine = {
-  text: string;
-  dmg: number;
-  from: "player" | "enemy";
-  to: "player" | "enemy";
-  kind: "hit" | "crit" | "miss";
-  source?: "player" | "enemy";
+export type BattleLogEntry = {
+  actor: "player" | "enemy";
+  type: "action_complete";
+  description: string;
+  damage: number;
+  damage_type: "physical" | "magical" | "mental";
+  formula: { base: number; atk: number; def: number; rand: number; crit: boolean; mult: number };
+  target_hp_after: number;
 };
 
-type UnitState = {
-  name: string;
-  level: number;
-  hp: number;
-  hpMax: number;
-  attrs: Attrs;
-};
+export function calcHP(c: Attrs) { return 30 + c.level * 5 + c.con * 1; }
+export function atkSpeed(c: Attrs) { return Math.max(c.dex, c.wis); }
+export function resistPhysicalMelee(c: Attrs) { return c.str + c.con * 0.5; }
+export function resistPhysicalRanged(c: Attrs) { return c.dex + c.con * 0.5; }
+export function resistMagic(c: Attrs) { return c.intt + c.con * 0.5; }
+export function resistMental(c: Attrs) { return c.wis + c.con * 0.5; }
+export function dodgeChance(c: Attrs) { return c.luck + c.dex * 0.5; }
+export function critChance(c: Attrs)  { return c.luck; }
+export function physicalMeleeAttack(c: Attrs) { return c.str + c.dex * 0.5; }
+export function physicalRangedAttack(c: Attrs) { return c.dex + c.str * 0.5; }
+export function magicAttack(c: Attrs) { return c.intt; }
+export function mentalAttack(c: Attrs) { return c.wis; }
 
-const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
-const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
-
-function hpFrom(level: number, con: number) {
-  return Math.max(1, Math.floor(30 + level * 2 + con * 3));
+export function accuracyPercent(attacker: Attrs, defender: Attrs) {
+  const mainAtk = Math.max(attacker.str, attacker.dex, attacker.intt);
+  const mainDef = Math.max(defender.str, defender.dex, defender.intt);
+  let base = 100 + (attacker.level - defender.level) * 5 + (mainAtk - mainDef) * 2;
+  return Math.min(100, Math.max(0, base));
 }
 
-// Velocidade = DEX + WIS
-function speedOf(u: UnitState) {
-  const { dex = 0, wis = 0 } = u.attrs;
-  return 0.4 + dex * 0.05 + wis * 0.03;
-}
+export async function resolveCombat(player: Attrs, enemy: Attrs & { name: string }) {
+  let playerHP = calcHP(player);
+  let enemyHP  = calcHP(enemy);
 
-function rng(luck: number) {
-  const base = Math.random();
-  const luckBoost = clamp(luck, 0, 100) / 100;
-  return { base, crit: base > 0.9 - luckBoost * 0.2, miss: base < 0.05 * (1 - luckBoost * 0.6) };
-}
+  let barP = 0, barE = 0;
+  const spP = atkSpeed(player), spE = atkSpeed(enemy);
 
-// Dano = STR + INT
-function doAttack(atk: UnitState, def: UnitState, from: "player" | "enemy", to: "player" | "enemy"): CombatLine {
-  const { str = 0, intt = 0, luck = 0 } = atk.attrs;
-  const roll = rng(luck);
-  if (roll.miss) return { text: `${atk.name} errou o ataque!`, dmg: 0, from, to, kind: "miss" };
+  const log: BattleLogEntry[] = [];
 
-  const baseDmg = Math.max(1, Math.floor((str + intt) * 1.2 + (atk.level ?? 1) * 0.5));
-  const spread = 0.8 + roll.base * 0.4;
-  let dmg = Math.floor(baseDmg * spread);
-  let kind: CombatLine["kind"] = "hit";
-  if (roll.crit) { dmg = Math.floor(dmg * 1.6); kind = "crit"; }
-  return { text: `Dano: ${dmg} (${kind})`, dmg, from, to, kind };
-}
+  while (playerHP > 0 && enemyHP > 0) {
+    barP += spP; barE += spE;
 
-function toUnit(name: string, a: Attrs): UnitState {
-  const level = num(a.level, 1);
-  const hpMax = hpFrom(level, num(a.con, 5));
-  return { name, level, hp: hpMax, hpMax, attrs: { ...a, level } };
-}
-
-export async function resolveCombat(player: Attrs, enemy: Attrs & { name?: string }) {
-  let p = toUnit("Você", player);
-  let e = toUnit(enemy.name ?? "Inimigo", enemy);
-
-      if (barP >= 100) {
+    if (barP >= 100) {
       barP -= 100;
       const r = attemptAttack(player, enemy);
       enemyHP = Math.max(0, enemyHP - r.damage);
@@ -104,16 +78,42 @@ export async function resolveCombat(player: Attrs, enemy: Attrs & { name?: strin
     }
   }
 
-  const finished = p.hp <= 0 || e.hp <= 0;
-  const winner = finished ? (p.hp > 0 ? "player" : e.hp > 0 ? "enemy" : "draw") : null;
+  return { result: playerHP > 0 ? "win" : "lose", log };
+}
 
-  return {
-    winner,
-    playerMaxHp: p.hpMax,
-    enemyMaxHp: e.hpMax,
-    playerEndHp: p.hp,
-    enemyEndHp: e.hp,
-    actions: log.length,
-    log,
-  };
+function attemptAttack(attacker: Attrs & { name?: string }, defender: Attrs) {
+  if (Math.random() * 100 > accuracyPercent(attacker, defender)) {
+    return { damage: 0, kind: "physical" as const,
+      formula: { base:0, atk:0, def:0, rand:0, crit:false, mult:1 },
+      desc: "YOU errou o ataque." };
+  }
+  if (Math.random() * 100 < dodgeChance(defender)) {
+    return { damage: 0, kind: "physical" as const,
+      formula: { base:0, atk:0, def:0, rand:0, crit:false, mult:1 },
+      desc: "TARGET desviou do ataque de YOU." };
+  }
+
+  const atkPhysical = Math.max(physicalMeleeAttack(attacker), physicalRangedAttack(attacker));
+  const atkMagical  = magicAttack(attacker);
+  const atkMental   = mentalAttack(attacker);
+
+  let kind: "physical" | "magical" | "mental" = "physical";
+  let atk = atkPhysical;
+  let def = resistPhysicalMelee(defender);
+
+  if (atkMagical >= atkPhysical && atkMagical >= atkMental) {
+    kind = "magical"; atk = atkMagical; def = resistMagic(defender);
+  } else if (atkMental >= atkPhysical && atkMental >= atkMagical) {
+    kind = "mental";  atk = atkMental;  def = resistMental(defender);
+  }
+
+  const base = atk;
+  const rand = Math.floor(Math.random() * 4); // 0..3
+  const crit = Math.random() * 100 < critChance(attacker);
+  const mult = crit ? 1.5 : 1;
+
+  let dmg = Math.max(1, Math.floor((base + rand) * mult) - Math.floor(def));
+  const desc = `YOU causou ${dmg} de dano em TARGET.`;
+
+  return { damage: dmg, kind, formula: { base, atk, def: Math.floor(def), rand, crit, mult }, desc };
 }
