@@ -8,10 +8,10 @@ const ATTR_HELP: Record<
   "str" | "dex" | "intt" | "wis" | "cha" | "con" | "luck",
   string
 > = {
-  str:  "Dano físico corpo‑a‑corpo = STR×1.8; também entra em resistência física (melee). Pode ser principal para MP.",
-  dex:  "Velocidade de ataque com WIS; dano à distância = DEX + STR×0.5; resistência física (ranged); esquiva.",
-  intt: "Dano mágico = INT×1.8; compõe resistência mágica. Pode ser principal para MP.",
-  wis:  "Velocidade de ataque/cast; dano mental = WIS; resistência mental; chance de dano verdadeiro.",
+  str:  "Dano físico e resistência física.",
+  dex:  "Velocidade de ataque; dano à distância, resistência física a distância; esquiva.",
+  intt: "Dano mágico; resistência mágica.",
+  wis:  "Velocidade de ataque; dano mental; resistência mental; chance de dano verdadeiro.",
   cha:  "Resistência a críticos; chance de redução de dano; aumenta multiplicador de crítico.",
   con:  "Aumenta HP e parte do MP; compõe resistências física/mágica/mental.",
   luck: "Define chance de crítico (até 60%).",
