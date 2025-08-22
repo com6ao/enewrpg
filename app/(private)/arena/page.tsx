@@ -121,41 +121,51 @@ export default function ArenaPage() {
   }
 
   async function loop(id: string) {
-    if (timer.current) clearTimeout(timer.current);
+  if (timer.current) clearTimeout(timer.current);
 
-    const res = await stepOnce(id);
-    if (!res) return;
-
-    if (res.lines?.length) setLogs(p => [...p, ...res.lines]);
-    setSnap(res.snap);
-
-    if (res.status === "finished") {
-      setEnded(res.winner);
-      return;
-    }
-    // SEMPRE continua o relógio (mesmo com Auto desmarcado)
-    timer.current = setTimeout(() => loop(id), 450);
+  // pausa o relógio até ter ação do jogador, quando Auto estiver desligado
+  if (!auto && !pendingCmd.current) {
+    timer.current = setTimeout(() => loop(id), 120);
+    return;
   }
+
+  const res = await stepOnce(id);
+  if (!res) return;
+
+  if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
+  setSnap(res.snap);
+
+  if (res.status === "finished") {
+    setEnded(res.winner);
+    // se Auto, continua automaticamente; se não, mostra botão "Próximo estágio"
+    if (auto) {
+      timer.current = setTimeout(() => loop(id), 450);
+    }
+    return;
+  }
+
+  timer.current = setTimeout(() => loop(id), 450);
+}
 
   async function start() {
-    setBusy(true);
-    setEnded(null);
-    setLogs([]);
-    setArenaId(null);
-    setSnap(null);
-    pendingCmd.current = null;
+  setBusy(true);
+  setEnded(null);
+  setLogs([]);
+  setArenaId(null);
+  setSnap(null);
+  pendingCmd.current = null;
 
-    const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
-    if (!r.ok) { alert(await r.text()); setBusy(false); return; }
-    const data = (await r.json()) as StartResp;
+  const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
+  if (!r.ok) { alert(await r.text()); setBusy(false); return; }
 
-    setArenaId(data.id);
-    setSnap(data.snap);
-    setBusy(false);
+  const data = (await r.json()) as StartResp;
+  setArenaId(data.id);
+  setSnap(data.snap);
+  setBusy(false);
 
-    // sempre inicia o clock
-    loop(data.id);
-  }
+  // sempre inicia o clock (o loop pausará se Auto off e sem ação)
+  loop(data.id);
+}
 
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
