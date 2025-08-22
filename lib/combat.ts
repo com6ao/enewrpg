@@ -101,14 +101,32 @@ export type PublicSnapshot = {
   calc: Calc[];
   srv: ServerState;
 };
-
-function copyPubPlayer(u: Unit & { id: "player" }): PublicSnapshot["player"] {
-  return { id: "player", name: u.name, level: u.level, hp: u.hp, hpMax: u.hpMax, mp: u.mp, mpMax: u.mpMax, atb: u.atb, nextIcon: u.nextIcon };
+function copyPubPlayer(u: Unit): PublicSnapshot["player"] {
+  return {
+    id: "player",
+    name: u.name,
+    level: u.level,
+    hp: u.hp,
+    hpMax: u.hpMax,
+    mp: u.mp,
+    mpMax: u.mpMax,
+    atb: u.atb,
+    nextIcon: u.nextIcon,
+  };
 }
-function copyPubEnemy(u: Unit & { id: "enemy" }): PublicSnapshot["enemy"] {
-  return { id: "enemy", name: u.name, level: u.level, hp: u.hp, hpMax: u.hpMax, mp: u.mp, mpMax: u.mpMax, atb: u.atb, nextIcon: u.nextIcon };
+function copyPubEnemy(u: Unit): PublicSnapshot["enemy"] {
+  return {
+    id: "enemy",
+    name: u.name,
+    level: u.level,
+    hp: u.hp,
+    hpMax: u.hpMax,
+    mp: u.mp,
+    mpMax: u.mpMax,
+    atb: u.atb,
+    nextIcon: u.nextIcon,
+  };
 }
-
 function rnd(n: number) { return Math.floor(Math.random() * n); }
 function roll(pct: number) { return Math.random() * 100 < pct; }
 
