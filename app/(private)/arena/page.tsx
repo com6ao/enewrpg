@@ -137,8 +137,9 @@ export default function ArenaPage() {
     return (await r.json()) as StepResp;
   }
 
-  async function loop(id: string) {
+ async function loop(id: string) {
   if (timer.current) clearTimeout(timer.current);
+
   const res = await stepOnce(id);
   if (!res) return;
 
@@ -149,20 +150,30 @@ export default function ArenaPage() {
     setEnded(res.winner);
     return;
   }
-
-- if (auto) timer.current = setTimeout(() => loop(id), 550);
-+ timer.current = setTimeout(() => loop(id), 450); // SEMPRE continua o relógio
+  // SEMPRE continua o relógio (mesmo com Auto desmarcado)
+  timer.current = setTimeout(() => loop(id), 450);
 }
-
+  
 async function start() {
-  // ...
+  setBusy(true);
+  setEnded(null);
+  setLogs([]);
+  setArenaId(null);
+  setSnap(null);
+  pendingCmd.current = null;
+
+  const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
+  if (!r.ok) { alert(await r.text()); setBusy(false); return; }
+
+  const data = (await r.json()) as StartResp;
   setArenaId(data.id);
   setSnap(data.snap);
   setBusy(false);
-- if (auto) loop(data.id);
-+ loop(data.id); // sempre inicia o clock
-}
 
+  // sempre inicia o clock
+  loop(data.id);
+}
+  
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
 
