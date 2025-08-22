@@ -34,7 +34,6 @@ export const resistCrit            = (a: Attr) => a.cha;
 
 // ⏩ Velocidades
 export const attackSpeed = (a: Attr) => a.dex + a.wis;
-export const castSpeed   = (a: Attr) => a.wis;
 
 // 🎯 Crítico / Reduções
 export const critChance       = (a: Attr) => clamp(a.luck * 2, 0, 60);                // ✅ sorte
