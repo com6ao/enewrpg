@@ -138,17 +138,30 @@ export default function ArenaPage() {
   }
 
   async function loop(id: string) {
-    if (timer.current) clearTimeout(timer.current);
-    const res = await stepOnce(id);
-    if (!res) return;
+  if (timer.current) clearTimeout(timer.current);
+  const res = await stepOnce(id);
+  if (!res) return;
 
-    if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
-    setSnap(res.snap);
+  if (res.lines?.length) setLogs(p => [...p, ...res.lines]);
+  setSnap(res.snap);
 
-    if (res.status === "finished") { setEnded(res.winner); return; }
-    if (auto) timer.current = setTimeout(() => loop(id), 450);
-    + timer.current = setTimeout(() => loop(id), 450); // SEMPRE continua o relógio
+  if (res.status === "finished") {
+    setEnded(res.winner);
+    return;
   }
+
+- if (auto) timer.current = setTimeout(() => loop(id), 550);
++ timer.current = setTimeout(() => loop(id), 450); // SEMPRE continua o relógio
+}
+
+async function start() {
+  // ...
+  setArenaId(data.id);
+  setSnap(data.snap);
+  setBusy(false);
+- if (auto) loop(data.id);
++ loop(data.id); // sempre inicia o clock
+}
 
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
