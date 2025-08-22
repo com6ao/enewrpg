@@ -120,52 +120,52 @@ export default function ArenaPage() {
     return (await r.json()) as StepResp;
   }
 
+  // ====== LOOP com pausa quando Auto off e sem ação ======
   async function loop(id: string) {
-  if (timer.current) clearTimeout(timer.current);
+    if (timer.current) clearTimeout(timer.current);
 
-  // pausa o relógio até ter ação do jogador, quando Auto estiver desligado
-  if (!auto && !pendingCmd.current) {
-    timer.current = setTimeout(() => loop(id), 120);
-    return;
-  }
-
-  const res = await stepOnce(id);
-  if (!res) return;
-
-  if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
-  setSnap(res.snap);
-
-  if (res.status === "finished") {
-    setEnded(res.winner);
-    // se Auto, continua automaticamente; se não, mostra botão "Próximo estágio"
-    if (auto) {
-      timer.current = setTimeout(() => loop(id), 450);
+    // pausa o relógio se Auto estiver OFF e o jogador ainda não escolheu uma ação
+    if (!auto && !pendingCmd.current) {
+      timer.current = setTimeout(() => loop(id), 120);
+      return;
     }
-    return;
-  }
 
-  timer.current = setTimeout(() => loop(id), 450);
-}
+    const res = await stepOnce(id);
+    if (!res) return;
+
+    if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
+    setSnap(res.snap);
+
+    if (res.status === "finished") {
+      setEnded(res.winner);
+      // Se Auto, avança sozinho para o próximo estágio
+      if (auto) timer.current = setTimeout(() => loop(id), 450);
+      return;
+    }
+
+    // continua o relógio
+    timer.current = setTimeout(() => loop(id), 450);
+  }
 
   async function start() {
-  setBusy(true);
-  setEnded(null);
-  setLogs([]);
-  setArenaId(null);
-  setSnap(null);
-  pendingCmd.current = null;
+    setBusy(true);
+    setEnded(null);
+    setLogs([]);
+    setArenaId(null);
+    setSnap(null);
+    pendingCmd.current = null;
 
-  const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
-  if (!r.ok) { alert(await r.text()); setBusy(false); return; }
+    const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
+    if (!r.ok) { alert(await r.text()); setBusy(false); return; }
+    const data = (await r.json()) as StartResp;
 
-  const data = (await r.json()) as StartResp;
-  setArenaId(data.id);
-  setSnap(data.snap);
-  setBusy(false);
+    setArenaId(data.id);
+    setSnap(data.snap);
+    setBusy(false);
 
-  // sempre inicia o clock (o loop pausará se Auto off e sem ação)
-  loop(data.id);
-}
+    // sempre inicia o clock (o loop pausa se Auto off e sem ação)
+    loop(data.id);
+  }
 
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
@@ -182,6 +182,27 @@ export default function ArenaPage() {
         { level: snap.player.level, hpMax: snap.player.hpMax, attrs: snap.srv.player.attrs }
       )
     : null;
+
+  // ===== formatação do log (cores + ícones) =====
+  function decorate(text: string, side: "neutral" | "player" | "enemy") {
+    // ícones
+    let t = text
+      .replace(/\(crit\)/gi, '(crit) 💥')
+      .replace(/\btrue[- ]?dano:? ?sim\b/gi, 'true:sim ☀️')
+      .replace(/\bredução de dano acionada\b/gi, 'redução de dano acionada 🌙');
+
+    // cores
+    let color = "#e5e7eb"; // neutro
+    if (/erra|erro|miss/i.test(t)) color = "#f6c453";         // amarelo
+    else if (/esquiv|dodge/i.test(t)) color = "#60a5fa";      // azul
+    else if (side === "player") color = "#22c55e";            // verde
+    else if (side === "enemy") color = "#ef4444";             // vermelho
+
+    // destaca números de dano
+    t = t.replace(/\b(\d+)\b/g, (m) => `<b>${m}</b>`);
+
+    return { __html: t, color };
+  }
 
   return (
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 16, display: "grid", gap: 12 }}>
@@ -263,9 +284,16 @@ export default function ArenaPage() {
       {/* Logs + Cálculos */}
       <section style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }}>
         <div style={{ ...card, maxHeight: 280, overflow: "auto" }}>
-          {logs.map((l, i) => (
-            <div key={i} style={{ padding: "6px 4px", borderBottom: "1px solid #151515" }}>{l.text}</div>
-          ))}
+          {logs.map((l, i) => {
+            const d = decorate(l.text, l.side);
+            return (
+              <div
+                key={i}
+                style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
+                dangerouslySetInnerHTML={{ __html: d.__html }}
+              />
+            );
+          })}
         </div>
         <aside style={card}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -286,7 +314,19 @@ export default function ArenaPage() {
         </aside>
       </section>
 
-      {ended && <div style={{ alignSelf: "center", opacity: 0.9 }}>Resultado: {ended === "draw" ? "empate" : ended === "player" ? "você venceu" : "você perdeu"}</div>}
+      {/* Resultado + próximo estágio */}
+      {ended && (
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ opacity: 0.9 }}>
+            Resultado: {ended === "draw" ? "empate" : ended === "player" ? "você venceu" : "você perdeu"}
+          </div>
+          {ended === "player" && arenaId && !auto && (
+            <button onClick={() => loop(arenaId)} style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71" }}>
+              Próximo estágio
+            </button>
+          )}
+        </div>
+      )}
     </main>
   );
 }
