@@ -71,10 +71,15 @@ export type Unit = {
 export type Calc = { text: string; side: "player" | "enemy" };
 export type Log = { text: string; side: "neutral" | "player" | "enemy" };
 export type ServerState = { player: Unit; enemy: Unit; log: Log[]; calc: Calc[] };
+
+/* ★ ids explícitos de skills e buffs */
+type SkillId = "golpe_poderoso" | "explosao_arcana" | "tiro_preciso";
+type BuffId  = "foco" | "fortalecer" | "enfraquecer";
+
 export type ClientCmd =
   | { kind: "basic" }
-  | { kind: "skill"; id?: "golpe_poderoso" | "explosao_arcana" | "tiro_preciso" }
-  | { kind: "buff"; id?: "foco" | "fortalecer" | "enfraquecer" };
+  | { kind: "skill"; id?: SkillId }
+  | { kind: "buff";  id?: BuffId };
 
 export type PublicSnapshot = {
   player: { id: "player"; name: string; level: number; hp: number; hpMax: number; mp: number; mpMax: number; atb: number; nextIcon?: string };
@@ -202,7 +207,10 @@ function doBasic(att: Unit, def: Unit, log: Log[], calc: Calc[]) {
   else log.push({ side: "neutral", text: `${att.name} erra o ataque` });
 }
 
-function doSkill(att: Unit, def: Unit, id: ClientCmd["id"], log: Log[], calc: Calc[]) {
+/* ★ aqui: id é SkillId | undefined em vez de ClientCmd["id"] */
+function doSkill(att: Unit, def: Unit, id: SkillId | undefined, log: Log[], calc: Calc[]) {
+  if (!id) return doBasic(att, def, log, calc); // fallback seguro quando vier undefined
+
   let base = 0 as number;
   let dtype: DmgType = "melee";
   let mpCost = 0;
@@ -245,7 +253,8 @@ function doSkill(att: Unit, def: Unit, id: ClientCmd["id"], log: Log[], calc: Ca
   else log.push({ side: "neutral", text: `${att.name} erra ${label}` });
 }
 
-function doBuff(att: Unit, def: Unit, id: ClientCmd["id"], log: Log[], calc: Calc[]) {
+/* ★ aqui: id é BuffId | undefined em vez de ClientCmd["id"] */
+function doBuff(att: Unit, def: Unit, id: BuffId | undefined, log: Log[], calc: Calc[]) {
   switch (id) {
     case "foco":
       att.buffs.accBonus = 20;
@@ -309,7 +318,7 @@ function chooseAI(att: Unit, def: Unit): ClientCmd {
     return { kind: "skill", id: canArcane ? "explosao_arcana" : "golpe_poderoso" };
   }
   if (!att.usedBonus && Math.random() < 0.35) {
-    return { kind: "buff", id: ["foco", "fortalecer", "enfraquecer"][rnd(3)] as any };
+    return { kind: "buff", id: ["foco", "fortalecer", "enfraquecer"][rnd(3)] as BuffId };
   }
   return { kind: "basic" };
 }
