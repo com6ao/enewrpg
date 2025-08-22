@@ -102,8 +102,11 @@ export type PublicSnapshot = {
   srv: ServerState;
 };
 
-function copyPub(u: Unit) {
-  return { id: u.id, name: u.name, level: u.level, hp: u.hp, hpMax: u.hpMax, mp: u.mp, mpMax: u.mpMax, atb: u.atb, nextIcon: u.nextIcon };
+function copyPubPlayer(u: Unit & { id: "player" }): PublicSnapshot["player"] {
+  return { id: "player", name: u.name, level: u.level, hp: u.hp, hpMax: u.hpMax, mp: u.mp, mpMax: u.mpMax, atb: u.atb, nextIcon: u.nextIcon };
+}
+function copyPubEnemy(u: Unit & { id: "enemy" }): PublicSnapshot["enemy"] {
+  return { id: "enemy", name: u.name, level: u.level, hp: u.hp, hpMax: u.hpMax, mp: u.mp, mpMax: u.mpMax, atb: u.atb, nextIcon: u.nextIcon };
 }
 
 function rnd(n: number) { return Math.floor(Math.random() * n); }
@@ -334,9 +337,11 @@ export function startCombat(opts?: { name?: string; level?: number; attrs?: Part
   const enemy  = spawnEnemy(1);
 
   const srv: ServerState = { player, enemy, log: [], calc: [], stage: 1, gold: 0 };
-  const snap: PublicSnapshot = { player: copyPub(player), enemy: copyPub(enemy), log: [], calc: [], srv };
-  return snap;
-}
+  const snap: PublicSnapshot = {
+  player: copyPubPlayer(player),
+  enemy:  copyPubEnemy(enemy),
+  log: [], calc: [], srv
+};
 
 /**
  * Um passo do combate. `cmd` é a intenção do jogador para ser aplicada
@@ -392,10 +397,8 @@ export function stepCombat(prevSrv: ServerState, cmd?: ClientCmd): PublicSnapsho
   }
 
   return {
-    player: copyPub(s.player),
-    enemy: copyPub(s.enemy),
-    log,
-    calc,
-    srv: s,
-  };
+  player: copyPubPlayer(s.player),
+  enemy:  copyPubEnemy(s.enemy),
+  log, calc, srv: s,
+};
 }
