@@ -11,10 +11,18 @@ type UnitPub = {
   hpMax: number;
   mp: number;
   mpMax: number;
-  atb: number;         // 0..100
+  atb: number; // 0..100
   nextIcon?: string;
 };
-type Attrs = { str:number; dex:number; intt:number; wis:number; cha:number; con:number; luck:number };
+type Attrs = {
+  str: number;
+  dex: number;
+  intt: number;
+  wis: number;
+  cha: number;
+  con: number;
+  luck: number;
+};
 type Snap = {
   player: UnitPub;
   enemy: UnitPub;
@@ -23,15 +31,15 @@ type Snap = {
   // srv está disponível; usamos só os attrs
   srv: {
     player: { attrs: Attrs; level: number };
-    enemy:  { attrs: Attrs; level: number };
+    enemy: { attrs: Attrs; level: number };
   };
 };
 
 type StartResp = { id: string; snap: Snap };
-type StepResp  = {
+type StepResp = {
   id: string;
   snap: Snap;
-  lines: Log[];                 // NOVOS logs desde o cursor
+  lines: Log[]; // NOVOS logs desde o cursor
   status: "active" | "finished";
   winner: null | "player" | "enemy" | "draw";
   cursor: number;
@@ -68,7 +76,11 @@ function AttrCard({
     else if (d <= -5) s = "↓↓";
     else if (d < 0) s = "↓";
     const c = d > 0 ? "#2ecc71" : d < 0 ? "#e74c3c" : "#9aa0a6";
-    return <span style={{ marginLeft: 4, fontSize: 11, color: c }}>{s}</span>;
+    return (
+      <span style={{ marginLeft: 4, fontSize: 11, color: c }}>
+        {s}
+      </span>
+    );
   }
   if (!attrs)
     return (
@@ -84,13 +96,34 @@ function AttrCard({
         <span className="muted">Lv {level ?? "?"}</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6, fontSize: 12 }}>
-        <div>STR {attrs.str}{compare && arrow(attrs.str, compare.str)}</div>
-        <div>DEX {attrs.dex}{compare && arrow(attrs.dex, compare.dex)}</div>
-        <div>INT {attrs.intt}{compare && arrow(attrs.intt, compare.intt)}</div>
-        <div>WIS {attrs.wis}{compare && arrow(attrs.wis, compare.wis)}</div>
-        <div>CHA {attrs.cha}{compare && arrow(attrs.cha, compare.cha)}</div>
-        <div>CON {attrs.con}{compare && arrow(attrs.con, compare.con)}</div>
-        <div>LUCK {attrs.luck}{compare && arrow(attrs.luck, compare.luck)}</div>
+        <div>
+          STR {attrs.str}
+          {compare && arrow(attrs.str, compare.str)}
+        </div>
+        <div>
+          DEX {attrs.dex}
+          {compare && arrow(attrs.dex, compare.dex)}
+        </div>
+        <div>
+          INT {attrs.intt}
+          {compare && arrow(attrs.intt, compare.intt)}
+        </div>
+        <div>
+          WIS {attrs.wis}
+          {compare && arrow(attrs.wis, compare.wis)}
+        </div>
+        <div>
+          CHA {attrs.cha}
+          {compare && arrow(attrs.cha, compare.cha)}
+        </div>
+        <div>
+          CON {attrs.con}
+          {compare && arrow(attrs.con, compare.con)}
+        </div>
+        <div>
+          LUCK {attrs.luck}
+          {compare && arrow(attrs.luck, compare.luck)}
+        </div>
       </div>
     </div>
   );
@@ -116,8 +149,17 @@ export default function ArenaPage() {
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
 
-  const timer = useRef<NodeJS.Timeout | null>(null);
-  useEffect(() => () => timer.current && clearTimeout(timer.current), []);
+  // usar tipo compatível com browser
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // cleanup precisa retornar () => void
+  useEffect(() => {
+    return () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
+    };
+  }, []);
 
   async function start() {
     setBusy(true);
