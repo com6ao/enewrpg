@@ -73,6 +73,9 @@ export type Unit = {
   nextIcon?: string;
 };
 
+export type PlayerUnit = Unit & { id: "player" };
+export type EnemyUnit  = Unit & { id: "enemy" };
+
 export type Calc = { text: string; side: "player" | "enemy" };
 export type Log = { text: string; side: "neutral" | "player" | "enemy" };
 export type ServerState = { player: Unit; enemy: Unit; log: Log[]; calc: Calc[] };
@@ -87,14 +90,27 @@ export type ClientCmd =
 
 export type PublicSnapshot = {
   player: { id: "player"; name: string; level: number; hp: number; hpMax: number; mp: number; mpMax: number; atb: number; nextIcon?: string };
-  enemy: { id: "enemy"; name: string; level: number; hp: number; hpMax: number; mp: number; mpMax: number; atb: number; nextIcon?: string };
+  enemy:  { id: "enemy";  name: string; level: number; hp: number; hpMax: number; mp: number; mpMax: number; atb: number; nextIcon?: string };
   log: Log[];
   calc: Calc[];
   srv: ServerState;
 };
 
+// overload que preserva o literal do id
+function copyPub(u: PlayerUnit): PublicSnapshot["player"];
+function copyPub(u: EnemyUnit):  PublicSnapshot["enemy"];
 function copyPub(u: Unit) {
-  return { id: u.id, name: u.name, level: u.level, hp: u.hp, hpMax: u.hpMax, mp: u.mp, mpMax: u.mpMax, atb: u.atb, nextIcon: u.nextIcon };
+  return {
+    id: u.id,
+    name: u.name,
+    level: u.level,
+    hp: u.hp,
+    hpMax: u.hpMax,
+    mp: u.mp,
+    mpMax: u.mpMax,
+    atb: u.atb,
+    nextIcon: u.nextIcon,
+  } as any;
 }
 
 function rnd(n: number) { return Math.floor(Math.random() * n); }
@@ -111,15 +127,24 @@ function applyBuffDecay(u: Unit) {
 function defaultAttrs(): Attr {
   return { str: 10, dex: 10, intt: 10, wis: 10, cha: 10, con: 10, luck: 10 };
 }
-function buildUnit(id: "player" | "enemy", name: string, level: number, attrs?: Partial<Attr>): Unit {
+
+function mainStat(a: Attr): "str" | "dex" | "intt" {
+  if (a.intt >= a.str && a.intt >= a.dex) return "intt";
+  if (a.str >= a.dex) return "str";
+  return "dex";
+}
+
+function buildUnit<T extends "player" | "enemy">(id: T, name: string, level: number, attrs?: Partial<Attr>): (Unit & { id: T }) {
   const a: Attr = { ...defaultAttrs(), ...attrs };
-  return {
+  const main = mainStat(a);
+  const u: Unit = {
     id, name, level, attrs: a,
     hp: hp(a, { level }), hpMax: hp(a, { level }),
-    mp: mpMain(a, { level }, a.intt >= a.str && a.intt >= a.dex ? "intt" : a.str >= a.dex ? "str" : "dex"),
-    mpMax: mpMain(a, { level }, a.intt >= a.str && a.intt >= a.dex ? "intt" : a.str >= a.dex ? "str" : "dex"),
+    mp: mpMain(a, { level }, main),
+    mpMax: mpMain(a, { level }, main),
     atb: 0, buffs: {},
   };
+  return u as Unit & { id: T };
 }
 
 /* ===== Dano base/defesa por tipo ===== */
@@ -290,7 +315,7 @@ function chooseAI(att: Unit, def: Unit): ClientCmd {
 /* ===== API de alto nível ===== */
 export function startCombat(): PublicSnapshot {
   const player = buildUnit("player", "Você", 1, { str: 12, dex: 10, intt: 10, wis: 10, con: 12, cha: 10, luck: 10 });
-  const enemy  = buildUnit("enemy", "Satyr Camp", 6, { str: 12, dex: 9, intt: 8, wis: 7, con: 7, cha: 7, luck: 6 });
+  const enemy  = buildUnit("enemy",  "Satyr Camp", 6, { str: 12, dex: 9,  intt: 8,  wis: 7,  con: 7,  cha: 7,  luck: 6  });
 
   const srv: ServerState = { player, enemy, log: [], calc: [] };
   const snap: PublicSnapshot = { player: copyPub(player), enemy: copyPub(enemy), log: [], calc: [], srv };
@@ -332,8 +357,8 @@ export function stepCombat(prevSrv: ServerState, cmd?: ClientCmd): PublicSnapsho
   }
 
   return {
-    player: copyPub(player),
-    enemy: copyPub(enemy),
+    player: copyPub(player as PlayerUnit),
+    enemy:  copyPub(enemy as EnemyUnit),
     log,
     calc,
     srv: s,
