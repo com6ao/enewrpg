@@ -342,7 +342,8 @@ export function startCombat(opts?: { name?: string; level?: number; attrs?: Part
   enemy:  copyPubEnemy(enemy),
   log: [], calc: [], srv
 };
-
+ return snap;              // <<< FALTAVA
+}     
 /**
  * Um passo do combate. `cmd` é a intenção do jogador para ser aplicada
  * quando o player agir.
@@ -399,6 +400,8 @@ export function stepCombat(prevSrv: ServerState, cmd?: ClientCmd): PublicSnapsho
   return {
   player: copyPubPlayer(s.player),
   enemy:  copyPubEnemy(s.enemy),
-  log, calc, srv: s,
+  log,
+  calc,
+  srv: s,
 };
 }
