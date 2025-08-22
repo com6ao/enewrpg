@@ -24,7 +24,7 @@ type Snap = {
   srv: {
     player: { attrs: Attrs; level: number };
     enemy:  { attrs: Attrs; level: number };
-  } as any;
+  };
 };
 
 type StartResp = { id: string; snap: Snap };
