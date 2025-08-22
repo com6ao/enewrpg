@@ -320,7 +320,7 @@ function chooseAI(att: Unit, def: Unit): ClientCmd {
 
 /* ===== Inimigos por estágio (NOVO) ===== */
 function spawnEnemy(stage: number): Unit {
-  const base = 5 + stage; // nível cresce
+  const base = stage; // nível cresce
   return buildUnit(
     "enemy",
     stage === 1 ? "Rato Selvagem"
