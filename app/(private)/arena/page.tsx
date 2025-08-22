@@ -1,302 +1,363 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
+import HPBar from "../../components/HPBar";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+type Battle =
+  | null
+  | {
+      id: string;
+      enemy_name: string;
+      player_hp: number;
+      player_hp_max: number;
+      enemy_hp: number;
+      enemy_hp_max: number;
+      cursor: number;
+      status: "active" | "finished";
+      winner?: "player" | "enemy" | "draw" | null;
+    };
 
-type Attr = { str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number };
-type UnitPublic = {
-  id: "player" | "enemy";
-  name: string;
+type Attrs = {
   level: number;
-  hp: number;
-  hpMax: number;
-  mp: number;
-  mpMax: number;
-  atb: number; // 0..100
-  nextIcon?: string;
+  str: number;
+  dex: number;
+  intt: number;
+  wis: number;
+  cha: number;
+  con: number;
+  luck: number;
 };
-type Log = { text: string; side: "neutral" | "player" | "enemy" };
-type Calc = { text: string; side: "player" | "enemy" };
-
-type ArenaState = {
-  player: UnitPublic;
-  enemy: UnitPublic;
-  log: Log[];
-  calc: Calc[];
-  // payload opaca de servidor
-  srv: any;
-};
-
-type CmdKind = "basic" | "skill" | "buff";
-type Cmd = { kind: CmdKind; id?: string };
 
 export default function ArenaPage() {
-  const [state, setState] = useState<ArenaState | null>(null);
+  const [area, setArea] = useState<"creep" | "jungle" | "ancient" | "boss">("creep");
   const [auto, setAuto] = useState(true);
-  const [openSkills, setOpenSkills] = useState(false);
-  const [openBuffs, setOpenBuffs] = useState(false);
+  const [state, setState] = useState<"idle" | "loading" | "playing" | "done">("idle");
+
+  const [battle, setBattle] = useState<Battle>(null);
+  const [playerAttrs, setPlayerAttrs] = useState<Attrs | null>(null);
+  const [enemyAttrs, setEnemyAttrs] = useState<Attrs | null>(null);
+
+  const [lines, setLines] = useState<any[]>([]);
+  const [showCalc, setShowCalc] = useState(false);
+
   const timer = useRef<NodeJS.Timeout | null>(null);
 
+  // 🔹 corrigido aqui
   useEffect(() => {
-    boot();
-    return () => timer.current && clearTimeout(timer.current);
+    return () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+      }
+    };
   }, []);
 
-  async function boot() {
-    const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
-    const data = await r.json();
-    setState(data);
-  }
-
-  async function step(cmd?: Cmd) {
-    if (!state) return;
-    const r = await fetch("/api/arena", {
+  async function startBattle() {
+    setState("loading");
+    setLines([]);
+    setBattle(null);
+    const r = await fetch("/api/battle/start", {
       method: "POST",
-      body: JSON.stringify({ op: "step", cmd, srv: state.srv }),
+      body: JSON.stringify({ area }),
     });
+    if (!r.ok) {
+      alert(await r.text());
+      setState("idle");
+      return;
+    }
     const data = await r.json();
-    setState(data);
+    setBattle(data.battle);
+    setPlayerAttrs(data.player_attrs ?? null);
+    setEnemyAttrs(data.enemy_attrs ?? null);
+    setState("playing");
+    if (auto) stepAuto(data.battle.id);
   }
 
-  useEffect(() => {
-    if (!auto || !state) return;
+  async function actOnce(battle_id: string) {
+    const r = await fetch("/api/battle/act", {
+      method: "POST",
+      body: JSON.stringify({ battle_id, steps: 1 }),
+    });
+    if (!r.ok) {
+      alert(await r.text());
+      return null;
+    }
+    return r.json();
+  }
+
+  async function stepAuto(battle_id: string) {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => step(), 400);
-  }, [state, auto]);
-
-  const skills = useMemo(
-    () => [
-      { id: "golpe_poderoso", name: "Golpe Poderoso (STR)", mp: 10 },
-      { id: "explosao_arcana", name: "Explosão Arcana (INT)", mp: 12 },
-      { id: "tiro_preciso", name: "Tiro Preciso (DEX)", mp: 8 },
-    ],
-    []
-  );
-
-  const buffs = useMemo(
-    () => [
-      { id: "foco", name: "Foco (+acerto)" },
-      { id: "fortalecer", name: "Fortalecer (+dano)" },
-      { id: "enfraquecer", name: "Enfraquecer (-resist inimigo)" },
-    ],
-    []
-  );
-
-  function Bar({ value, max, color }: { value: number; max: number; color: string }) {
-    const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
-    return (
-      <div style={{ background: "#2b2f37", height: 10, borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ width: pct + "%", height: 10, background: color, transition: "width .2s" }} />
-      </div>
-    );
+    const res = await actOnce(battle_id);
+    if (!res) return;
+    setBattle(res.battle);
+    setLines((prev) => [...prev, ...res.lines]);
+    if (res.battle.status === "finished") {
+      setState("done");
+      return;
+    }
+    if (auto) timer.current = setTimeout(() => stepAuto(battle_id), 550);
   }
 
-  function UnitCard({ u, align }: { u: UnitPublic; align: "left" | "right" }) {
+  async function nextTurn() {
+    if (!battle) return;
+    const res = await actOnce(battle.id);
+    if (!res) return;
+    setBattle(res.battle);
+    setLines((prev) => [...prev, ...res.lines]);
+    if (res.battle.status === "finished") setState("done");
+  }
+
+  function reset() {
+    if (timer.current) clearTimeout(timer.current);
+    setState("idle");
+    setBattle(null);
+    setLines([]);
+    setPlayerAttrs(null);
+    setEnemyAttrs(null);
+  }
+
+  // ---- formatação de linha + detecção de origem ----
+  function formatLine(item: any): string {
+    if (typeof item === "string") return item;
+
+    const desc = item.description ?? "";
+    const dmg = item.damage ?? item.dmg ?? item.amount ?? null;
+    const dtype = item.damage_type ?? item.kind ?? null;
+
+    const f = item.formula ?? item.calc ?? null;
+    const parts: string[] = [];
+    if (desc) parts.push(desc);
+    if (dmg != null) parts.push(`Dano: ${dmg}${dtype ? ` (${dtype})` : ""}`);
+    if (f && typeof f === "object") {
+      const kv = [
+        `atk:${f.atk}`,
+        `def:${f.def}`,
+        `base:${f.base}`,
+        `crit:${!!f.crit}`,
+        `mult:${f.mult}`,
+        `rand:${f.rand}`,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      parts.push(`Cálculo: ${kv}`);
+    }
+    if (item.target_hp_after != null) parts.push(`HP alvo após: ${item.target_hp_after}`);
+
+    return parts.filter(Boolean).join(" · ");
+  }
+
+  function resolveSource(line: any, enemyName?: string): "player" | "enemy" | "neutral" {
+    if (line && typeof line === "object") {
+      if (line.source === "player" || line.source === "enemy") return line.source;
+      if (line.actor === "player" || line.actor === "enemy") return line.actor;
+      if (line.attacker === "player" || line.attacker === "enemy") return line.attacker;
+    }
+    const t = formatLine(line).toLowerCase();
+    const enemy = (enemyName || "").toLowerCase();
+
+    if (t.startsWith("você") || t.includes("você causou")) return "player";
+    if (enemy && (t.startsWith(enemy) || t.includes("em você"))) return "enemy";
+
+    return "neutral";
+  }
+
+  function bgFor(source: "player" | "enemy" | "neutral") {
+    if (source === "player") return "rgba(46, 204, 113, 0.12)"; // verde suave
+    if (source === "enemy")  return "rgba(231, 76, 60, 0.12)";  // vermelho suave
+    return "transparent";
+  }
+  // ---------------------------------------------------
+
+  // setas de diferença
+  function AttrBox({ title, a, compare }: { title: string; a: Attrs | null; compare: Attrs | null }) {
+    if (!a)
+      return (
+        <div className="card" style={{ padding: 8 }}>
+          <h3>{title}</h3>
+          <div className="muted">Atributos indisponíveis</div>
+        </div>
+      );
+
+    function renderArrow(v1: number, v2: number) {
+      const diff = v1 - v2;
+      let symbol = "";
+      if (diff >= 10) symbol = "↑↑↑";
+      else if (diff >= 5) symbol = "↑↑";
+      else if (diff > 0) symbol = "↑";
+      else if (diff <= -10) symbol = "↓↓↓";
+      else if (diff <= -5) symbol = "↓↓";
+      else if (diff < 0) symbol = "↓";
+
+      const color = diff > 0 ? "#2ecc71" : diff < 0 ? "#e74c3c" : "#bbb";
+      return <span style={{ fontSize: 8, color, marginLeft: 2 }}>{symbol}</span>;
+    }
+
     return (
-      <div style={{ display: "grid", gap: 6, textAlign: align === "left" ? "left" : "right" }}>
-        <div style={{ fontWeight: 700 }}>{u.name} • Lv {u.level}</div>
-        <Bar value={u.hp} max={u.hpMax} color="#22c55e" />
-        <Bar value={u.mp} max={u.mpMax} color="#3b82f6" />
-        <div style={{ display: "flex", gap: 6, alignItems: "center", ...(align === "right" ? { justifyContent: "flex-end" } : {}) }}>
-          <div style={{ width: 80 }}>
-            <Bar value={u.atb} max={100} color="#eab308" />
-          </div>
-          {u.nextIcon && (
-            <span style={{ fontSize: 12, opacity: 0.8, border: "1px solid #444", padding: "2px 6px", borderRadius: 6 }}>
-              {u.nextIcon}
-            </span>
-          )}
+      <div className="card" style={{ padding: 8 }}>
+        <h3>{title}</h3>
+        <div className="muted">Lv {a.level}</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4,minmax(0,1fr))",
+            gap: 6,
+            marginTop: 6,
+            fontSize: 12,
+          }}
+        >
+          <div>STR {a.str} {compare && renderArrow(a.str, compare.str)}</div>
+          <div>DEX {a.dex} {compare && renderArrow(a.dex, compare.dex)}</div>
+          <div>INT {a.intt} {compare && renderArrow(a.intt, compare.intt)}</div>
+          <div>WIS {a.wis} {compare && renderArrow(a.wis, compare.wis)}</div>
+          <div>CHA {a.cha} {compare && renderArrow(a.cha, compare.cha)}</div>
+          <div>CON {a.con} {compare && renderArrow(a.con, compare.con)}</div>
+          <div>LUCK {a.luck} {compare && renderArrow(a.luck, compare.luck)}</div>
+          <div />
         </div>
       </div>
     );
   }
 
   return (
-    <main style={{ display: "grid", gridTemplateColumns: "280px 1fr 320px", gap: 12, padding: 12 }}>
-      {/* LEFT — placeholders de equipamento/itens/loja */}
-      <aside style={{ background: "#0f1116", border: "1px solid #1f2937", borderRadius: 10, padding: 10 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Equipamentos</div>
-        <div style={{ height: 120, background: "#0a0c11", borderRadius: 8, border: "1px dashed #263043" }} />
-        <div style={{ fontWeight: 700, margin: "12px 0 8px" }}>Itens</div>
-        <div style={{ height: 120, background: "#0a0c11", borderRadius: 8, border: "1px dashed #263043" }} />
-        <div style={{ fontWeight: 700, margin: "12px 0 8px" }}>Loja</div>
-        <div style={{ height: 120, background: "#0a0c11", borderRadius: 8, border: "1px dashed #263043" }} />
-      </aside>
+    <main
+      className="container"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 12,
+      }}
+    >
+      {/* LEFT: ARENA */}
+      <div style={{ flex: "1 1 0" }}>
+        <h1>Arena</h1>
 
-      {/* CENTER — arena e log de ações */}
-      <section style={{ display: "grid", gap: 12 }}>
-        {/* topo dos combatentes */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            alignItems: "center",
-            background: "#0f1116",
-            border: "1px solid #1f2937",
-            borderRadius: 10,
-            padding: 12,
-          }}
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "center" }}>
-            <div style={{ width: 72, height: 72, borderRadius: 10, background: "#111827", border: "1px solid #263043" }} />
-            {state && <UnitCard u={state.player} align="left" />}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 10, alignItems: "center" }}>
-            {state && <UnitCard u={state.enemy} align="right" />}
-            <div style={{ width: 72, height: 72, borderRadius: 10, background: "#111827", border: "1px solid #263043" }} />
-          </div>
-        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {(["creep", "jungle", "ancient", "boss"] as const).map((a) => (
+            <button
+              key={a}
+              className="btn"
+              disabled={state !== "idle"}
+              onClick={() => setArea(a)}
+              style={{ background: area === a ? "#3498db" : undefined }}
+            >
+              {a}
+            </button>
+          ))}
 
-        {/* comandos */}
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            background: "#0f1116",
-            border: "1px solid #1f2937",
-            borderRadius: 10,
-            padding: 10,
-            alignItems: "center",
-          }}
-        >
-          <button className="btn" onClick={() => step({ kind: "basic" })}>Ataque básico</button>
+          <button
+            className="btn"
+            onClick={startBattle}
+            disabled={state !== "idle"}
+            style={{ background: "#2ecc71" }}
+          >
+            Lutar
+          </button>
 
-          <div style={{ position: "relative" }}>
-            <button className="btn" onClick={() => setOpenSkills((v) => !v)}>Habilidade especial</button>
-            {openSkills && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: "110%",
-                  background: "#0f1116",
-                  border: "1px solid #1f2937",
-                  borderRadius: 10,
-                  padding: 8,
-                  display: "grid",
-                  gap: 6,
-                  minWidth: 260,
-                  zIndex: 5,
-                }}
-              >
-                {skills.map((s) => (
-                  <button key={s.id} className="btn" onClick={() => { setOpenSkills(false); step({ kind: "skill", id: s.id }); }}>
-                    {s.name} • MP {s.mp}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {state !== "idle" && (
+            <button
+              className="btn"
+              onClick={reset}
+              style={{ background: "#e74c3c" }}
+            >
+              Reset
+            </button>
+          )}
 
-          <div style={{ position: "relative" }}>
-            <button className="btn" onClick={() => setOpenBuffs((v) => !v)}>Buffs & Debuffs</button>
-            {openBuffs && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: "110%",
-                  background: "#0f1116",
-                  border: "1px solid #1f2937",
-                  borderRadius: 10,
-                  padding: 8,
-                  display: "grid",
-                  gap: 6,
-                  minWidth: 260,
-                  zIndex: 5,
-                }}
-              >
-                {buffs.map((b) => (
-                  <button key={b.id} className="btn" onClick={() => { setOpenBuffs(false); step({ kind: "buff", id: b.id }); }}>
-                    {b.name} • Ação bônus
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <label style={{ marginLeft: "auto", fontSize: 13 }}>
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto
+          <label style={{ marginLeft: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={auto}
+              onChange={(e) => {
+                setAuto(e.target.checked);
+                if (e.target.checked && battle && state === "playing") stepAuto(battle.id);
+              }}
+            />
+            Auto
           </label>
+
+          {!auto && state === "playing" && (
+            <button className="btn" onClick={nextTurn}>
+              Próximo turno
+            </button>
+          )}
         </div>
 
-        {/* feed central */}
-        <div
-          style={{
-            background: "#0f1116",
-            border: "1px solid #1f2937",
-            borderRadius: 10,
-            padding: 10,
-            height: 260,
-            overflow: "auto",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Ações</div>
-          <div style={{ display: "grid", gap: 6 }}>
-            {state?.log.map((l, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: "6px 8px",
-                  background:
-                    l.side === "player"
-                      ? "rgba(34,197,94,.10)"
-                      : l.side === "enemy"
-                      ? "rgba(239,68,68,.10)"
-                      : "transparent",
-                  borderLeft:
-                    l.side === "player" ? "3px solid #22c55e" : l.side === "enemy" ? "3px solid #ef4444" : "3px solid #374151",
-                  borderRadius: 6,
-                }}
-              >
-                {l.text}
+        {battle && (
+          <section className="card" style={{ display: "grid", gap: 12, marginTop: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <h3>Você</h3>
+                <HPBar current={battle.player_hp} max={battle.player_hp_max} />
+                <div style={{ marginTop: 8 }}>
+                  <AttrBox title="Atributos" a={playerAttrs} compare={enemyAttrs} />
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
+              <div>
+                <h3>{battle.enemy_name}</h3>
+                <HPBar current={battle.enemy_hp} max={battle.enemy_hp_max} />
+                <div style={{ marginTop: 8 }}>
+                  <AttrBox title="Atributos" a={enemyAttrs} compare={playerAttrs} />
+                </div>
+              </div>
+            </div>
 
-      {/* RIGHT — cálculos */}
+            <div className="muted">
+              Turnos revelados: {battle.cursor} {battle.status === "finished" ? "(finalizada)" : ""}
+            </div>
+
+            {/* LOG PRINCIPAL COM CORES */}
+            <div className="card" style={{ maxHeight: 260, overflow: "auto", background: "#0e0e0e" }}>
+              {lines.map((line, i) => {
+                const text = formatLine(line).split(" · Cálculo:")[0];
+                const source = resolveSource(line, battle?.enemy_name);
+                const bg = bgFor(source);
+                return (
+                  <div
+                    key={i}
+                    style={{ padding: 6, borderBottom: "1px solid #222", background: bg }}
+                  >
+                    {text}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button className="btn" style={{ width: "100%" }} onClick={() => setShowCalc(!showCalc)}>
+              Ver cálculos de combate
+            </button>
+          </section>
+        )}
+      </div>
+
+      {/* RIGHT: SIDEBAR (fixa 240px; no mobile cai abaixo) */}
       <aside
         style={{
-          background: "#0f1116",
-          border: "1px solid #1f2937",
-          borderRadius: 10,
-          padding: 10,
-          height: 520,
-          overflow: "auto",
+          width: 240,
+          flex: "0 0 240px",
+          background: "#111",
+          padding: 12,
+          borderRadius: 8,
+          height: "fit-content",
         }}
       >
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>Detalhes do cálculo</div>
-        <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
-          {state?.calc.map((c, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "6px 8px",
-                background: c.side === "player" ? "rgba(34,197,94,.06)" : "rgba(239,68,68,.06)",
-                borderLeft: c.side === "player" ? "3px solid #22c55e" : "3px solid #ef4444",
-                borderRadius: 6,
-              }}
-            >
-              {c.text}
-            </div>
-          ))}
-        </div>
+        <h3>Detalhes do combate</h3>
+        {showCalc ? (
+          <div style={{ fontSize: 12, maxHeight: 500, overflow: "auto", marginTop: 6 }}>
+            {lines.map((l, i) => {
+              const parts = formatLine(l).split(" · Cálculo:");
+              const source = resolveSource(l, battle?.enemy_name);
+              const bg = bgFor(source);
+              return (
+                <div key={i} style={{ borderBottom: "1px solid #222", padding: 4, background: bg }}>
+                  {parts[1] ? "Cálculo:" + parts[1] : "-"}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+            Clique no botão “Ver cálculos de combate” na arena para exibir cálculos aqui.
+          </div>
+        )}
       </aside>
     </main>
   );
-}
-
-/* util mínima de botão */
-declare global {
-  // eslint-disable-next-line no-var
-  var _btn_: boolean | undefined;
-}
-if (!globalThis._btn_) {
-  const style = document.createElement("style");
-  style.innerHTML = `.btn{background:#1f2937;border:1px solid #334155;color:#e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer}
-  .btn:hover{background:#273244}`;
-  document.head.appendChild(style);
-  globalThis._btn_ = true;
 }
