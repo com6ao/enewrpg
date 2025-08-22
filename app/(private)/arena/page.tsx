@@ -147,6 +147,7 @@ export default function ArenaPage() {
 
     if (res.status === "finished") { setEnded(res.winner); return; }
     if (auto) timer.current = setTimeout(() => loop(id), 450);
+    + timer.current = setTimeout(() => loop(id), 450); // SEMPRE continua o relógio
   }
 
   // fila de ação do jogador
