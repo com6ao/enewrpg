@@ -34,21 +34,20 @@ export const attackSpeed = (a: Attr) => a.dex + a.wis;
 export const castSpeed = (a: Attr) => a.wis;
 
 // 🎯 crítico / reduções
-export const critChance = (a: Attr) => clamp(a.luck * 2, 0, 60);
+export const critChance = (a: Attr) => clamp(a.luck * 0.4, 0, 60);
 export const critMultiplier = (a: Attr) => 150 + Math.floor(a.cha * 1.5);
-export const trueDamageChance = (a: Attr) => clamp(a.wis * 2, 0, 50);
-export const damageReductionChance = (a: Attr) => clamp(a.cha * 2, 0, 60);
+export const trueDamageChance = (a: Attr) => clamp(a.wis * 0.25, 0, 50);
+export const damageReductionChance = (a: Attr) => clamp(a.cha * 0.15, 0, 60);
 export const damageReductionPercent = 80;
 
 // 🌀 esquiva e precisão
 export function dodgeChance(a: Attr) {
-  return clamp(Math.floor(a.dex * 1.5), 0, 95);
+  return clamp(Math.floor(a.dex * 0.3), 0, 55);
 }
-export function accuracyPercent(atkLv: number, defLv: number, atkMax: number, defMax: number) {
+export function accuracyPercent(atkLv: number, defLv: number) {
   let acc = 100;
-  if (defLv > atkLv) acc -= (defLv - atkLv) * 5;
-  if (defMax > atkMax) acc -= (defMax - atkMax) * 2;
-  return clamp(acc, 5, 100);
+  if (defLv > atkLv) acc -= (defLv - atkLv) * 10;
+  return clamp(acc, 30, 100);
 }
 
 /* ===== Estruturas e motor ===== */
