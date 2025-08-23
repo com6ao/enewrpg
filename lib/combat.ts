@@ -179,7 +179,7 @@ function resist(def: Unit, dtype: DmgType): number {
 
 /* ===== Resolução de ação ===== */
 function tryHit(att: Unit, def: Unit): { miss: boolean; crit: boolean; trueDmg: boolean; accUsed: number; dodgeUsed: number } {
-  const acc   = accuracyPercent(att.level, def.level, att.hpMax, def.hpMax) + (att.buffs.accBonus ?? 0);
+  const acc   = accuracyPercent(att.level, def.level) + (att.buffs.accBonus ?? 0);
   const dodge = dodgeChance(def.attrs);
   const accRoll = clamp(acc - dodge, 5, 100);
   const miss = !roll(accRoll);
