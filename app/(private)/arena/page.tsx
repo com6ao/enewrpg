@@ -31,6 +31,7 @@ const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) 
 };
 
 /* ===== UI helpers ===== */
+const atbSpeed = (a: Attrs) => 0.4 + (a.dex + a.wis) * 0.08; // mesma fórmula do motor
 function Bar({
   value,
   color = "#2ecc71",
