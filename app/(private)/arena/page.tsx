@@ -32,10 +32,67 @@ const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) 
 
 /* ===== UI helpers ===== */
 function Bar({ value, color = "#2ecc71" }: { value: number; color?: string }) {
-  const w = Math.max(0, Math.min(100, Math.round(value)));
+  const pct = Math.max(0, Math.min(100, Math.round(value)));
+
   return (
-    <div style={{ height: 10, background: "#222", borderRadius: 6, overflow: "hidden" }}>
-      <div style={{ width: `${w}%`, height: "100%", background: color }} />
+    <div
+      style={{
+        position: "relative",
+        height: 10,
+        background: "#222",
+        borderRadius: 6,
+        overflow: "hidden",
+      }}
+    >
+      {/* preenchimento que anima a largura */}
+      <div
+        style={{
+          width: `${pct}%`,
+          height: "100%",
+          background: color,
+          transition: "width 450ms linear",   // <- suaviza a passagem entre ticks
+        }}
+      />
+
+      {/* cursor/ponteiro do timer */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: "100%",
+          width: 2,
+          background: "#ffffff",
+          opacity: 0.9,
+          transform: `translateX(${pct}%)`,
+          transition: "transform 450ms linear", // <- move junto com a largura
+          boxShadow: "0 0 6px rgba(255,255,255,.6)",
+        }}
+      />
+
+      {/* “shimmer” sutil para parecer tempo correndo */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 8px, transparent 8px 16px)",
+          mixBlendMode: "screen",
+          animation: "barSlide 2.2s linear infinite",
+          pointerEvents: "none",
+        }}
+      />
+
+      <style jsx>{`
+        @keyframes barSlide {
+          from {
+            transform: translateX(0);
+          }
+          to {
+            transform: translateX(32px);
+          }
+        }
+      `}</style>
     </div>
   );
 }
