@@ -6,21 +6,36 @@ import {
   type ClientCmd,
 } from "@/lib/combat";
 
-// === ADIÇÃO: helper para buscar status reais do dashboard (ajuste nomes das colunas/tabela)
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr"; // << usar client oficial
+
 type Attr = { str:number; dex:number; intt:number; wis:number; con:number; cha:number; luck:number };
 
-// Se você já tem um helper de Supabase, importe-o aqui
-import { createSupabaseServerClient } from "@/lib/supabaseServer"; // <- ajuste o caminho se necessário
-
 async function getPlayerFromDashboard(): Promise<{ name: string; level: number; attrs: Attr }> {
-  const supabase = await createSupabaseServerClient();
+  // cria o supabase server-side, preservando sessão via cookies
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
+        },
+      },
+    }
+  );
 
-  // usuário autenticado
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) throw new Error("Não autenticado");
 
-  // ⚠️ Ajuste para a sua tabela/colunas reais!
-  // Exemplo: tabela "characters" com colunas name, level, str, dex, intt, wis, con, cha, luck
+  // ⚠️ AJUSTE nomes de tabela/colunas p/ seu dashboard
   const { data, error } = await supabase
     .from("characters")
     .select("name, level, str, dex, intt, wis, con, cha, luck")
@@ -41,7 +56,6 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
 
   return { name: data.name ?? "Você", level: data.level ?? 1, attrs };
 }
-// === FIM ADIÇÃO
 
 type Row = {
   srv: PublicSnapshot["srv"];
@@ -59,15 +73,14 @@ export async function POST(req: Request) {
   const op = (body?.op ?? "start") as "start" | "step";
 
   if (op === "start") {
-    // === ALTERADO: tenta iniciar com status reais; se falhar, usa defaults do motor
+    // tenta iniciar com status reais; se falhar, usa defaults do motor
     let snap: PublicSnapshot;
     try {
       const player = await getPlayerFromDashboard(); // { name, level, attrs }
       snap = startCombat(player);
     } catch {
-      snap = startCombat(); // fallback
+      snap = startCombat(); // fallback seguro
     }
-    // === FIM ALTERAÇÃO
 
     const id = crypto.randomUUID();
     mem.battles[id] = { srv: snap.srv, cursor: 0, status: "active", winner: null };
@@ -81,9 +94,9 @@ export async function POST(req: Request) {
   }
 
   const row = mem.battles[id];
-  const cmd = (body?.cmd ?? undefined) as ClientCmd | undefined; // suporte a cmd
+  const cmd = (body?.cmd ?? undefined) as ClientCmd | undefined;
 
-  const snap = stepCombat(row.srv, cmd); // repassa cmd para o motor
+  const snap = stepCombat(row.srv, cmd);
   row.srv = snap.srv;
 
   const newLogs = snap.log.slice(row.cursor);
