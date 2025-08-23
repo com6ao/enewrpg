@@ -143,6 +143,9 @@ export default function ArenaPage() {
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
 
+  // 🔵 progresso visual contínuo das barras (0..100)
+  const [progress, setProgress] = useState<{ player: number; enemy: number }>({ player: 0, enemy: 0 });
+
   // ação pendente do jogador
   type Cmd =
     | { kind: "basic" }
@@ -174,7 +177,15 @@ export default function ArenaPage() {
     const res = await stepOnce(id);
     if (!res) return;
 
-    if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
+    // reset visual das barras quando alguém age (com base nos logs da ação)
+    if (res.lines?.length) {
+      setLogs((p) => [...p, ...res.lines]);
+      res.lines.forEach((l) => {
+        if (l.side === "player") setProgress((pr) => ({ ...pr, player: 0 }));
+        if (l.side === "enemy") setProgress((pr) => ({ ...pr, enemy: 0 }));
+      });
+    }
+
     setSnap(res.snap);
 
     if (res.status === "finished") {
@@ -202,6 +213,8 @@ export default function ArenaPage() {
 
     setArenaId(data.id);
     setSnap(data.snap);
+    // sincroniza o visual com o estado do motor ao iniciar
+    setProgress({ player: data.snap.player.atb, enemy: data.snap.enemy.atb });
     setBusy(false);
 
     // sempre inicia o clock (o loop pausa se Auto off e sem ação)
@@ -248,6 +261,43 @@ export default function ArenaPage() {
   const lastStageToShow = Math.max(stage + 4, 5);
   const stageRows = Array.from({ length: lastStageToShow }, (_, i) => i + 1);
 
+  /* ===== animação contínua do ATB (visual) =====
+     Usa a mesma fórmula do motor. Avança a cada frame e trava em 100.
+     Quando o motor executa uma ação (detectada nos logs), a barra correspondente é resetada para 0 acima. */
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000; // segundos desde o último frame
+      last = now;
+
+      if (snap) {
+        const spPlayer = atbSpeed(snap.srv.player.attrs);
+        const spEnemy  = atbSpeed(snap.srv.enemy.attrs);
+
+        setProgress((p) => ({
+          player: clamp(p.player + spPlayer * dt, 0, 100),
+          enemy:  clamp(p.enemy  + spEnemy  * dt, 0, 100),
+        }));
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [snap?.srv.player.attrs, snap?.srv.enemy.attrs]); // recomeça o loop se atributos mudarem
+
+  // mantém o visual sincronizado quando o motor reporta ATB “saltado” (mudança de estágio etc.)
+  useEffect(() => {
+    if (!snap) return;
+    setProgress({
+      player: clamp(snap.player.atb, 0, 100),
+      enemy:  clamp(snap.enemy.atb, 0, 100),
+    });
+  }, [snap?.player.atb, snap?.enemy.atb, snap?.srv.stage]);
+
   return (
     <main style={{ maxWidth: 1120, margin: "0 auto", padding: 16 }}>
       {/* layout em 2 colunas: conteúdo + coluna direita */}
@@ -276,7 +326,8 @@ export default function ArenaPage() {
                 <Bar value={(snap.player.hp / snap.player.hpMax) * 100} />
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.player.hp}/{snap.player.hpMax}</div>
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-                <Bar value={snap.player.atb} color="#00bcd4" />
+                {/* ⬇️ usa progresso visual contínuo */}
+                <Bar value={progress.player} color="#00bcd4" />
               </div>
               <div style={card}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -285,7 +336,8 @@ export default function ArenaPage() {
                 <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} />
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.enemy.hp}/{snap.enemy.hpMax}</div>
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-                <Bar value={snap.enemy.atb} color="#ff9800" />
+                {/* ⬇️ usa progresso visual contínuo */}
+                <Bar value={progress.enemy} color="#ff9800" />
               </div>
             </section>
           )}
