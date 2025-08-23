@@ -34,7 +34,7 @@ const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) 
 function Bar({
   value,
   color = "#2ecc71",
-  smoothMs = 450,
+  smoothMs = 40,
 }: { value: number; color?: string; smoothMs?: number }) {
   const w = Math.max(0, Math.min(100, Math.round(value)));
 
