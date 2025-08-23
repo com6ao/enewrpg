@@ -11,7 +11,7 @@ type Snap = {
   enemy: UnitPub;
   log: Log[];
   calc: Calc[];
-  // ⬇️ acrescentei stage e gold (mantive o resto)
+  // inclui progresso
   srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
 };
 type StartResp = { id: string; snap: Snap };
@@ -32,6 +32,7 @@ const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) 
 
 /* ===== UI helpers ===== */
 const atbSpeed = (a: Attrs) => 0.4 + (a.dex + a.wis) * 0.08; // mesma fórmula do motor
+
 function Bar({
   value,
   color = "#2ecc71",
@@ -59,7 +60,7 @@ function Bar({
         }}
       />
 
-      {/* “cursor” tipo ampulheta andando na borda da barra */}
+      {/* cursor */}
       <div
         style={{
           position: "absolute",
@@ -133,6 +134,86 @@ function AttrCard({
 const stageName = (s: number) =>
   s === 1 ? "Rato Selvagem" : s === 2 ? "Lobo Faminto" : s === 3 ? "Goblin Batedor" : `Elite ${s}`;
 
+/* === NOVOS HELPERS/UI === */
+type TurnBadge = { who: "player" | "enemy"; at: number };
+function projectTurns(
+  pAtb: number,
+  eAtb: number,
+  pAttrs: Attrs,
+  eAttrs: Attrs,
+  slots = 12
+): TurnBadge[] {
+  let pa = pAtb, ea = eAtb;
+  const ps = atbSpeed(pAttrs);
+  const es = atbSpeed(eAttrs);
+
+  const out: TurnBadge[] = [];
+  let t = 0;
+  while (out.length < slots) {
+    const needP = Math.max(0, 100 - pa);
+    const needE = Math.max(0, 100 - ea);
+    const dtP = needP / ps;
+    const dtE = needE / es;
+    const dt = Math.min(dtP, dtE, 1e9);
+    t += dt;
+    pa += ps * dt;
+    ea += es * dt;
+
+    if (pa >= 100 && pa >= ea) { out.push({ who: "player", at: t }); pa -= 100; }
+    else if (ea >= 100)       { out.push({ who: "enemy",  at: t }); ea -= 100; }
+  }
+  return out;
+}
+
+function TimelineBar({
+  playerAtb,
+  enemyAtb,
+  pAttrs,
+  eAttrs,
+}: {
+  playerAtb: number;
+  enemyAtb: number;
+  pAttrs: Attrs;
+  eAttrs: Attrs;
+}) {
+  const badges = projectTurns(playerAtb, enemyAtb, pAttrs, eAttrs, 12);
+  const maxAt = badges[badges.length - 1]?.at || 1;
+
+  return (
+    <div style={{ background: "#1a1a1a", height: 16, borderRadius: 8, position: "relative", overflow: "hidden" }}>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: `${Math.min(99, Math.max(0, (Math.max(playerAtb, enemyAtb) / 100) * 100))}%`,
+          width: 2,
+          height: "100%",
+          background: "rgba(255,255,255,.6)",
+          boxShadow: "0 0 6px rgba(255,255,255,.9)",
+        }}
+      />
+      {badges.map((b, i) => (
+        <div
+          key={i}
+          title={b.who === "player" ? "Você" : "Inimigo"}
+          style={{
+            position: "absolute",
+            top: -10,
+            left: `${(b.at / maxAt) * 100}%`,
+            transform: "translateX(-50%)",
+            fontSize: 12,
+            pointerEvents: "none",
+          }}
+        >
+          <span style={{ filter: "drop-shadow(0 0 2px #000)" }}>
+            {b.who === "player" ? "👑" : "😈"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ===== Página ===== */
 export default function ArenaPage() {
   const [arenaId, setArenaId] = useState<string | null>(null);
@@ -142,9 +223,35 @@ export default function ArenaPage() {
   const [auto, setAuto] = useState(true);
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
+  const [progOpen, setProgOpen] = useState(true);
 
-  // 🔵 progresso visual contínuo das barras (0..100)
-  const [progress, setProgress] = useState<{ player: number; enemy: number }>({ player: 0, enemy: 0 });
+  // animações
+  const [animPlayer, setAnimPlayer] = useState<null | "slash" | "hit" | "evade" | "crit" | "reduce">(null);
+  const [animEnemy,  setAnimEnemy ] = useState<null | "slash" | "hit" | "evade" | "crit" | "reduce">(null);
+
+  useEffect(() => {
+    if (!logs.length) return;
+    const last = logs[logs.length - 1];
+    const txt = last.text.toLowerCase();
+
+    const isCrit   = /crit/.test(txt);
+    const isEvade  = /erra|miss|esquiv/.test(txt);
+    const isReduce = /redução de dano/.test(txt);
+    const isPlayer = last.side === "player";
+    const isEnemy  = last.side === "enemy";
+
+    const set = (who: "player" | "enemy", kind: typeof animPlayer) => {
+      (who === "player" ? setAnimPlayer : setAnimEnemy)(kind);
+      setTimeout(() => (who === "player" ? setAnimPlayer : setAnimEnemy)(null), 500);
+    };
+
+    if (isEvade) { set(isPlayer ? "enemy" : "player", "evade"); return; }
+    if (isReduce){ set(isPlayer ? "enemy" : "player", "reduce"); return; }
+    if (isCrit)  { set(isPlayer ? "enemy" : "player", "crit"); return; }
+
+    if (isPlayer) { set("player", "slash"); setTimeout(() => set("enemy", "hit"), 120); }
+    if (isEnemy)  { set("enemy",  "slash"); setTimeout(() => set("player","hit"), 120); }
+  }, [logs]);
 
   // ação pendente do jogador
   type Cmd =
@@ -164,11 +271,10 @@ export default function ArenaPage() {
     return (await r.json()) as StepResp;
   }
 
-  // ====== LOOP com pausa quando Auto off e sem ação ======
+  // LOOP com pausa quando Auto off e sem ação
   async function loop(id: string) {
     if (timer.current) clearTimeout(timer.current);
 
-    // pausa o relógio se Auto estiver OFF e o jogador ainda não escolheu uma ação
     if (!auto && !pendingCmd.current) {
       timer.current = setTimeout(() => loop(id), 120);
       return;
@@ -177,25 +283,15 @@ export default function ArenaPage() {
     const res = await stepOnce(id);
     if (!res) return;
 
-    // reset visual das barras quando alguém age (com base nos logs da ação)
-    if (res.lines?.length) {
-      setLogs((p) => [...p, ...res.lines]);
-      res.lines.forEach((l) => {
-        if (l.side === "player") setProgress((pr) => ({ ...pr, player: 0 }));
-        if (l.side === "enemy") setProgress((pr) => ({ ...pr, enemy: 0 }));
-      });
-    }
-
+    if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
 
     if (res.status === "finished") {
       setEnded(res.winner);
-      // Se Auto, avança sozinho para o próximo estágio
       if (auto) timer.current = setTimeout(() => loop(id), 450);
       return;
     }
 
-    // continua o relógio
     timer.current = setTimeout(() => loop(id), 450);
   }
 
@@ -213,11 +309,9 @@ export default function ArenaPage() {
 
     setArenaId(data.id);
     setSnap(data.snap);
-    // sincroniza o visual com o estado do motor ao iniciar
-    setProgress({ player: data.snap.player.atb, enemy: data.snap.enemy.atb });
     setBusy(false);
 
-    // sempre inicia o clock (o loop pausa se Auto off e sem ação)
+    // inicia o clock
     loop(data.id);
   }
 
@@ -234,76 +328,41 @@ export default function ArenaPage() {
     { level: snap.player.level, attrs: snap.srv.player.attrs }
   ) : null;
 
-  // ===== formatação do log (cores + ícones) =====
+  // formatação do log
   function decorate(text: string, side: "neutral" | "player" | "enemy") {
-    // ícones
     let t = text
       .replace(/\(crit\)/gi, '(crit) 💥')
       .replace(/\btrue[- ]?dano:? ?sim\b/gi, 'true:sim ☀️')
       .replace(/\bredução de dano acionada\b/gi, 'redução de dano acionada 🌙');
 
-    // cores
-    let color = "#e5e7eb"; // neutro
-    if (/erra|erro|miss/i.test(t)) color = "#f6c453";         // amarelo
-    else if (/esquiv|dodge/i.test(t)) color = "#60a5fa";      // azul
-    else if (side === "player") color = "#22c55e";            // verde
-    else if (side === "enemy") color = "#ef4444";             // vermelho
+    let color = "#e5e7eb";
+    if (/erra|erro|miss/i.test(t)) color = "#f6c453";
+    else if (/esquiv|dodge/i.test(t)) color = "#60a5fa";
+    else if (side === "player") color = "#22c55e";
+    else if (side === "enemy") color = "#ef4444";
 
-    // destaca números de dano
     t = t.replace(/\b(\d+)\b/g, (m) => `<b>${m}</b>`);
-
     return { __html: t, color };
   }
 
-  /* ===== dados da coluna direita (estágios) ===== */
+  // dados da coluna direita
   const stage = snap?.srv?.stage ?? 1;
   const goldTotal = snap?.srv?.gold ?? 0;
   const lastStageToShow = Math.max(stage + 4, 5);
   const stageRows = Array.from({ length: lastStageToShow }, (_, i) => i + 1);
 
-  /* ===== animação contínua do ATB (visual) =====
-     Usa a mesma fórmula do motor. Avança a cada frame e trava em 100.
-     Quando o motor executa uma ação (detectada nos logs), a barra correspondente é resetada para 0 acima. */
-  useEffect(() => {
-    let raf = 0;
-    let last = performance.now();
-
-    const tick = (now: number) => {
-      const dt = (now - last) / 1000; // segundos desde o último frame
-      last = now;
-
-      if (snap) {
-        const spPlayer = atbSpeed(snap.srv.player.attrs);
-        const spEnemy  = atbSpeed(snap.srv.enemy.attrs);
-
-        setProgress((p) => ({
-          player: clamp(p.player + spPlayer * dt, 0, 100),
-          enemy:  clamp(p.enemy  + spEnemy  * dt, 0, 100),
-        }));
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [snap?.srv.player.attrs, snap?.srv.enemy.attrs]); // recomeça o loop se atributos mudarem
-
-  // mantém o visual sincronizado quando o motor reporta ATB “saltado” (mudança de estágio etc.)
-  useEffect(() => {
-    if (!snap) return;
-    setProgress({
-      player: clamp(snap.player.atb, 0, 100),
-      enemy:  clamp(snap.enemy.atb, 0, 100),
-    });
-  }, [snap?.player.atb, snap?.enemy.atb, snap?.srv.stage]);
+  // auto-scroll para os logs
+  const logRef  = useRef<HTMLDivElement | null>(null);
+  const calcRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (logRef.current)  logRef.current.scrollTop  = logRef.current.scrollHeight; }, [logs]);
+  useEffect(() => { if (calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight; }, [snap?.calc]);
 
   return (
-    <main style={{ maxWidth: 1120, margin: "0 auto", padding: 16 }}>
-      {/* layout em 2 colunas: conteúdo + coluna direita */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 12 }}>
-        {/* ESQUERDA: tudo que você já tinha */}
-        <div style={{ display: "grid", gap: 12 }}>
+    <main style={{ maxWidth: 1360, margin: "0 auto", padding: 16 }}>
+      {/* layout 2 colunas */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
+        {/* ESQUERDA */}
+        <div style={{ display: "grid", gap: 16 }}>
           <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h1 style={{ fontSize: 24 }}>Arena</h1>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -316,28 +375,68 @@ export default function ArenaPage() {
             </div>
           </header>
 
-          {/* HUD: HP + ATB */}
+          {/* HUD: HP + MP + Timeline */}
           {snap && (
-            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {/* Player */}
               <div style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <strong>Você</strong><span>Lv {snap.player.level}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div className={
+                    animPlayer === "slash" ? "anim-slash" :
+                    animPlayer === "hit"   ? "anim-hit"   :
+                    animPlayer === "evade" ? "anim-evade" :
+                    animPlayer === "crit"  ? "anim-crit"  :
+                    animPlayer === "reduce"? "anim-reduce": ""
+                  } style={{
+                    width: 36, height: 36, borderRadius: 9999, background: "#0ea5e9",
+                    display: "grid", placeItems: "center", fontSize: 18
+                  }}>👤</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", flex: 1 }}>
+                    <strong>Você</strong>
+                    <span>Lv {snap.player.level}</span>
+                  </div>
                 </div>
+
                 <Bar value={(snap.player.hp / snap.player.hpMax) * 100} />
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.player.hp}/{snap.player.hpMax}</div>
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-                {/* ⬇️ usa progresso visual contínuo */}
-                <Bar value={progress.player} color="#00bcd4" />
+                <Bar value={(snap.player.mp / snap.player.mpMax) * 100} color="#6366f1" />
+                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>MP {snap.player.mp}/{snap.player.mpMax}</div>
               </div>
+
+              {/* Enemy */}
               <div style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div className={
+                    animEnemy === "slash" ? "anim-slash" :
+                    animEnemy === "hit"   ? "anim-hit"   :
+                    animEnemy === "evade" ? "anim-evade" :
+                    animEnemy === "crit"  ? "anim-crit"  :
+                    animEnemy === "reduce"? "anim-reduce": ""
+                  } style={{
+                    width: 36, height: 36, borderRadius: 9999, background: "#ef4444",
+                    display: "grid", placeItems: "center", fontSize: 18
+                  }}>👹</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", flex: 1 }}>
+                    <strong>{snap.enemy.name}</strong>
+                    <span>Lv {snap.enemy.level}</span>
+                  </div>
                 </div>
-                <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} />
+
+                <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} color="#16a34a" />
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.enemy.hp}/{snap.enemy.hpMax}</div>
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-                {/* ⬇️ usa progresso visual contínuo */}
-                <Bar value={progress.enemy} color="#ff9800" />
+                <Bar value={(snap.enemy.mp / snap.enemy.mpMax) * 100} color="#8b5cf6" />
+                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>MP {snap.enemy.mp}/{snap.enemy.mpMax}</div>
+              </div>
+
+              {/* Timeline */}
+              <div style={{ gridColumn: "1 / span 2" }}>
+                <div style={{ marginBottom: 6, fontSize: 12, opacity: 0.85 }}>Ordem de ações (estimada)</div>
+                <TimelineBar
+                  playerAtb={snap.player.atb}
+                  enemyAtb={snap.enemy.atb}
+                  pAttrs={snap.srv.player.attrs}
+                  eAttrs={snap.srv.enemy.attrs}
+                />
               </div>
             </section>
           )}
@@ -350,7 +449,7 @@ export default function ArenaPage() {
             </section>
           )}
 
-          {/* Controles de AÇÃO do jogador */}
+          {/* Controles */}
           {arenaId && snap && (
             <section style={{ ...card, display: "grid", gap: 8 }}>
               <div style={{ fontWeight: 600 }}>Suas ações</div>
@@ -381,9 +480,9 @@ export default function ArenaPage() {
             </section>
           )}
 
-          {/* Logs + Cálculos */}
-          <section style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }}>
-            <div style={{ ...card, maxHeight: 280, overflow: "auto" }}>
+          {/* Logs + Cálculos (calc abaixo do log) */}
+          <section style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+            <div ref={logRef} style={{ ...card, maxHeight: 220, overflow: "auto" }}>
               {logs.map((l, i) => {
                 const d = decorate(l.text, l.side);
                 return (
@@ -395,7 +494,8 @@ export default function ArenaPage() {
                 );
               })}
             </div>
-            <aside style={card}>
+
+            <div ref={calcRef} style={{ ...card, maxHeight: 160, overflow: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Cálculos</h3>
                 <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "6px 8px", borderRadius: 8, background: "#1f2937", fontSize: 12 }}>
@@ -403,7 +503,7 @@ export default function ArenaPage() {
                 </button>
               </div>
               {showCalc ? (
-                <div style={{ fontSize: 12, maxHeight: 280, overflow: "auto" }}>
+                <div style={{ fontSize: 12 }}>
                   {(snap?.calc ?? []).map((c, i) => (
                     <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
                   ))}
@@ -411,7 +511,7 @@ export default function ArenaPage() {
               ) : (
                 <div className="muted" style={{ fontSize: 12 }}>Clique em “Ver” para exibir cálculos aqui.</div>
               )}
-            </aside>
+            </div>
           </section>
 
           {/* Resultado + próximo estágio */}
@@ -429,46 +529,67 @@ export default function ArenaPage() {
           )}
         </div>
 
-        {/* DIREITA: nova coluna com estágios/progresso */}
+        {/* DIREITA: progresso colapsável */}
         <aside style={{ ...card, position: "sticky", top: 12, height: "fit-content" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
             <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Progresso da Arena</h3>
-            <div style={{ fontSize: 12, opacity: 0.9 }}>💰 Ouro: <b>{goldTotal}</b></div>
-          </div>
-
-          <div style={{ fontSize: 12, marginBottom: 8 }}>
-            Estágio atual: <b>{stage}</b>
-          </div>
-
-          <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", background: "#111", padding: "6px 8px", fontWeight: 600, fontSize: 12 }}>
-              <div>Est.</div>
-              <div>Inimigo</div>
-              <div style={{ textAlign: "right" }}>Status</div>
-            </div>
-            <div>
-              {stageRows.map((s) => {
-                const isPast = s < stage;
-                const isCurrent = s === stage && snap;
-                const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
-                return (
-                  <div key={s} style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", padding: "6px 8px", borderTop: "1px solid #151515", alignItems: "center" }}>
-                    <div>#{s}</div>
-                    <div>{stageName(s)}</div>
-                    <div style={{ textAlign: "right", opacity: 0.95 }}>
-                      {isPast ? "✔ Concluído" : isCurrent ? `${hpPct}% HP` : "—"}
-                    </div>
-                  </div>
-                );
-              })}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontSize: 12, opacity: 0.9 }}>💰 <b>{goldTotal}</b></div>
+              <button onClick={() => setProgOpen(v => !v)} style={{ padding: "4px 8px", borderRadius: 6, background: "#1f2937", fontSize: 12 }}>
+                {progOpen ? "Minimizar" : "Expandir"}
+              </button>
             </div>
           </div>
 
-          <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>
-            Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
-          </div>
+          {progOpen && (
+            <>
+              <div style={{ fontSize: 12, marginBottom: 8 }}>
+                Estágio atual: <b>{stage}</b>
+              </div>
+
+              <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", background: "#111", padding: "6px 8px", fontWeight: 600, fontSize: 12 }}>
+                  <div>Est.</div>
+                  <div>Inimigo</div>
+                  <div style={{ textAlign: "right" }}>Status</div>
+                </div>
+                <div>
+                  {stageRows.map((s) => {
+                    const isPast = s < stage;
+                    const isCurrent = s === stage && snap;
+                    const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
+                    return (
+                      <div key={s} style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", padding: "6px 8px", borderTop: "1px solid #151515", alignItems: "center" }}>
+                        <div>#{s}</div>
+                        <div>{stageName(s)}</div>
+                        <div style={{ textAlign: "right", opacity: 0.95 }}>
+                          {isPast ? "✔ Concluído" : isCurrent ? `${hpPct}% HP` : "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>
+                Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
+              </div>
+            </>
+          )}
         </aside>
       </div>
+
+      {/* animações CSS */}
+      <style jsx global>{`
+        @keyframes slash { 0%{transform: translateX(0) skewX(-12deg)} 100%{transform: translateX(10px) skewX(0)} }
+        @keyframes hit   { 0%{transform: translateX(0)} 30%{transform: translateX(-6px)} 100%{transform: translateX(0)} }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+        .anim-slash { animation: slash .35s ease; }
+        .anim-hit   { animation: hit .35s ease; }
+        .anim-evade { animation: blink .5s linear; }
+        .anim-crit  { animation: blink .5s linear 0s 2; filter: drop-shadow(0 0 6px #ffec99); }
+        .anim-reduce{ animation: blink .5s linear 0s 2; filter: drop-shadow(0 0 6px #9ad0ec); }
+      `}</style>
     </main>
   );
 }
