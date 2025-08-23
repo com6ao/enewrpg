@@ -11,7 +11,8 @@ type Snap = {
   enemy: UnitPub;
   log: Log[];
   calc: Calc[];
-  srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number } };
+  // ⬇️ acrescentei stage e gold (mantive o resto)
+  srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
 };
 type StartResp = { id: string; snap: Snap };
 type StepResp = { id: string; snap: Snap; lines: Log[]; status: "active" | "finished"; winner: null | "player" | "enemy" | "draw"; cursor: number };
@@ -90,6 +91,10 @@ function AttrCard({
     </div>
   );
 }
+
+/* ==== nome do estágio (mesma lógica do servidor) ==== */
+const stageName = (s: number) =>
+  s === 1 ? "Rato Selvagem" : s === 2 ? "Lobo Faminto" : s === 3 ? "Goblin Batedor" : `Elite ${s}`;
 
 /* ===== Página ===== */
 export default function ArenaPage() {
@@ -170,14 +175,14 @@ export default function ArenaPage() {
   const queue = (c: Cmd) => { pendingCmd.current = c; };
 
   const accPlayer = snap ? finalAcc(
-  { level: snap.player.level },
-  { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }
-) : null;
+    { level: snap.player.level },
+    { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }
+  ) : null;
 
-const accEnemy = snap ? finalAcc(
-  { level: snap.enemy.level },
-  { level: snap.player.level, attrs: snap.srv.player.attrs }
-) : null;
+  const accEnemy = snap ? finalAcc(
+    { level: snap.enemy.level },
+    { level: snap.player.level, attrs: snap.srv.player.attrs }
+  ) : null;
 
   // ===== formatação do log (cores + ícones) =====
   function decorate(text: string, side: "neutral" | "player" | "enemy") {
@@ -200,129 +205,181 @@ const accEnemy = snap ? finalAcc(
     return { __html: t, color };
   }
 
+  /* ===== dados da coluna direita (estágios) ===== */
+  const stage = snap?.srv?.stage ?? 1;
+  const goldTotal = snap?.srv?.gold ?? 0;
+  const lastStageToShow = Math.max(stage + 4, 5);
+  const stageRows = Array.from({ length: lastStageToShow }, (_, i) => i + 1);
+
   return (
-    <main style={{ maxWidth: 1120, margin: "0 auto", padding: 16, display: "grid", gap: 12 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ fontSize: 24 }}>Arena</h1>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto
-          </label>
-          <button onClick={start} disabled={busy} style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71" }}>
-            Lutar
-          </button>
-        </div>
-      </header>
-
-      {/* HUD: HP + ATB */}
-      {snap && (
-        <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={card}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <strong>Você</strong><span>Lv {snap.player.level}</span>
+    <main style={{ maxWidth: 1120, margin: "0 auto", padding: 16 }}>
+      {/* layout em 2 colunas: conteúdo + coluna direita */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 12 }}>
+        {/* ESQUERDA: tudo que você já tinha */}
+        <div style={{ display: "grid", gap: 12 }}>
+          <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h1 style={{ fontSize: 24 }}>Arena</h1>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto
+              </label>
+              <button onClick={start} disabled={busy} style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71" }}>
+                Lutar
+              </button>
             </div>
-            <Bar value={(snap.player.hp / snap.player.hpMax) * 100} />
-            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.player.hp}/{snap.player.hpMax}</div>
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-            <Bar value={snap.player.atb} color="#00bcd4" />
-          </div>
-          <div style={card}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
-            </div>
-            <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} />
-            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.enemy.hp}/{snap.enemy.hpMax}</div>
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-            <Bar value={snap.enemy.atb} color="#ff9800" />
-          </div>
-        </section>
-      )}
+          </header>
 
-      {/* Atributos + precisão efetiva */}
-      {snap && (
-        <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <AttrCard title="Seus atributos" attrs={snap.srv.player.attrs} compare={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
-          <AttrCard title="Atributos do inimigo" attrs={snap.srv.enemy.attrs} compare={snap.srv.player.attrs} level={snap.enemy.level} accShown={accEnemy} />
-        </section>
-      )}
-
-      {/* Controles de AÇÃO do jogador */}
-      {arenaId && snap && (
-        <section style={{ ...card, display: "grid", gap: 8 }}>
-          <div style={{ fontWeight: 600 }}>Suas ações</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            <button onClick={() => queue({ kind: "basic" })} className="btn" style={{ padding: "8px 10px", background: "#1f2937", borderRadius: 8 }}>
-              Ataque básico
-            </button>
-            <button onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
-              Golpe Poderoso
-            </button>
-            <button onClick={() => queue({ kind: "skill", id: "explosao_arcana" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
-              Explosão Arcana
-            </button>
-            <button onClick={() => queue({ kind: "skill", id: "tiro_preciso" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
-              Tiro Preciso
-            </button>
-            <button onClick={() => queue({ kind: "buff", id: "foco" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
-              Foco
-            </button>
-            <button onClick={() => queue({ kind: "buff", id: "fortalecer" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
-              Fortalecer
-            </button>
-            <button onClick={() => queue({ kind: "buff", id: "enfraquecer" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
-              Enfraquecer
-            </button>
-          </div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>A ação escolhida é usada automaticamente quando sua barra “Ação” atinge 100.</div>
-        </section>
-      )}
-
-      {/* Logs + Cálculos */}
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }}>
-        <div style={{ ...card, maxHeight: 280, overflow: "auto" }}>
-          {logs.map((l, i) => {
-            const d = decorate(l.text, l.side);
-            return (
-              <div
-                key={i}
-                style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
-                dangerouslySetInnerHTML={{ __html: d.__html }}
-              />
-            );
-          })}
-        </div>
-        <aside style={card}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Cálculos</h3>
-            <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "6px 8px", borderRadius: 8, background: "#1f2937", fontSize: 12 }}>
-              {showCalc ? "Ocultar" : "Ver"}
-            </button>
-          </div>
-          {showCalc ? (
-            <div style={{ fontSize: 12, maxHeight: 280, overflow: "auto" }}>
-              {(snap?.calc ?? []).map((c, i) => (
-                <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted" style={{ fontSize: 12 }}>Clique em “Ver” para exibir cálculos aqui.</div>
+          {/* HUD: HP + ATB */}
+          {snap && (
+            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={card}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <strong>Você</strong><span>Lv {snap.player.level}</span>
+                </div>
+                <Bar value={(snap.player.hp / snap.player.hpMax) * 100} />
+                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.player.hp}/{snap.player.hpMax}</div>
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
+                <Bar value={snap.player.atb} color="#00bcd4" />
+              </div>
+              <div style={card}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
+                </div>
+                <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} />
+                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.enemy.hp}/{snap.enemy.hpMax}</div>
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
+                <Bar value={snap.enemy.atb} color="#ff9800" />
+              </div>
+            </section>
           )}
+
+          {/* Atributos + precisão efetiva */}
+          {snap && (
+            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <AttrCard title="Seus atributos" attrs={snap.srv.player.attrs} compare={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
+              <AttrCard title="Atributos do inimigo" attrs={snap.srv.enemy.attrs} compare={snap.srv.player.attrs} level={snap.enemy.level} accShown={accEnemy} />
+            </section>
+          )}
+
+          {/* Controles de AÇÃO do jogador */}
+          {arenaId && snap && (
+            <section style={{ ...card, display: "grid", gap: 8 }}>
+              <div style={{ fontWeight: 600 }}>Suas ações</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <button onClick={() => queue({ kind: "basic" })} className="btn" style={{ padding: "8px 10px", background: "#1f2937", borderRadius: 8 }}>
+                  Ataque básico
+                </button>
+                <button onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
+                  Golpe Poderoso
+                </button>
+                <button onClick={() => queue({ kind: "skill", id: "explosao_arcana" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
+                  Explosão Arcana
+                </button>
+                <button onClick={() => queue({ kind: "skill", id: "tiro_preciso" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
+                  Tiro Preciso
+                </button>
+                <button onClick={() => queue({ kind: "buff", id: "foco" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
+                  Foco
+                </button>
+                <button onClick={() => queue({ kind: "buff", id: "fortalecer" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
+                  Fortalecer
+                </button>
+                <button onClick={() => queue({ kind: "buff", id: "enfraquecer" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
+                  Enfraquecer
+                </button>
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>A ação escolhida é usada automaticamente quando sua barra “Ação” atinge 100.</div>
+            </section>
+          )}
+
+          {/* Logs + Cálculos */}
+          <section style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }}>
+            <div style={{ ...card, maxHeight: 280, overflow: "auto" }}>
+              {logs.map((l, i) => {
+                const d = decorate(l.text, l.side);
+                return (
+                  <div
+                    key={i}
+                    style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
+                    dangerouslySetInnerHTML={{ __html: d.__html }}
+                  />
+                );
+              })}
+            </div>
+            <aside style={card}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Cálculos</h3>
+                <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "6px 8px", borderRadius: 8, background: "#1f2937", fontSize: 12 }}>
+                  {showCalc ? "Ocultar" : "Ver"}
+                </button>
+              </div>
+              {showCalc ? (
+                <div style={{ fontSize: 12, maxHeight: 280, overflow: "auto" }}>
+                  {(snap?.calc ?? []).map((c, i) => (
+                    <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
+                  ))}
+                </div>
+              ) : (
+                <div className="muted" style={{ fontSize: 12 }}>Clique em “Ver” para exibir cálculos aqui.</div>
+              )}
+            </aside>
+          </section>
+
+          {/* Resultado + próximo estágio */}
+          {ended && (
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <div style={{ opacity: 0.9 }}>
+                Resultado: {ended === "draw" ? "empate" : ended === "player" ? "você venceu" : "você perdeu"}
+              </div>
+              {ended === "player" && arenaId && !auto && (
+                <button onClick={() => loop(arenaId)} style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71" }}>
+                  Próximo estágio
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* DIREITA: nova coluna com estágios/progresso */}
+        <aside style={{ ...card, position: "sticky", top: 12, height: "fit-content" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Progresso da Arena</h3>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>💰 Ouro: <b>{goldTotal}</b></div>
+          </div>
+
+          <div style={{ fontSize: 12, marginBottom: 8 }}>
+            Estágio atual: <b>{stage}</b>
+          </div>
+
+          <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", background: "#111", padding: "6px 8px", fontWeight: 600, fontSize: 12 }}>
+              <div>Est.</div>
+              <div>Inimigo</div>
+              <div style={{ textAlign: "right" }}>Status</div>
+            </div>
+            <div>
+              {stageRows.map((s) => {
+                const isPast = s < stage;
+                const isCurrent = s === stage && snap;
+                const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
+                return (
+                  <div key={s} style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", padding: "6px 8px", borderTop: "1px solid #151515", alignItems: "center" }}>
+                    <div>#{s}</div>
+                    <div>{stageName(s)}</div>
+                    <div style={{ textAlign: "right", opacity: 0.95 }}>
+                      {isPast ? "✔ Concluído" : isCurrent ? `${hpPct}% HP` : "—"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>
+            Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
+          </div>
         </aside>
-      </section>
-
-      {/* Resultado + próximo estágio */}
-      {ended && (
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <div style={{ opacity: 0.9 }}>
-            Resultado: {ended === "draw" ? "empate" : ended === "player" ? "você venceu" : "você perdeu"}
-          </div>
-          {ended === "player" && arenaId && !auto && (
-            <button onClick={() => loop(arenaId)} style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71" }}>
-              Próximo estágio
-            </button>
-          )}
-        </div>
-      )}
+      </div>
     </main>
   );
 }
