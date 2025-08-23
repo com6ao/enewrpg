@@ -169,18 +169,15 @@ export default function ArenaPage() {
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
 
-  const accPlayer = snap
-    ? finalAcc(
-        { level: snap.player.level, hpMax: snap.player.hpMax },
-        { level: snap.enemy.level, hpMax: snap.enemy.hpMax, attrs: snap.srv.enemy.attrs }
-      )
-    : null;
-  const accEnemy = snap
-    ? finalAcc(
-        { level: snap.enemy.level, hpMax: snap.enemy.hpMax },
-        { level: snap.player.level, hpMax: snap.player.hpMax, attrs: snap.srv.player.attrs }
-      )
-    : null;
+  const accPlayer = snap ? finalAcc(
+  { level: snap.player.level },
+  { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }
+) : null;
+
+const accEnemy = snap ? finalAcc(
+  { level: snap.enemy.level },
+  { level: snap.player.level, attrs: snap.srv.player.attrs }
+) : null;
 
   // ===== formatação do log (cores + ícones) =====
   function decorate(text: string, side: "neutral" | "player" | "enemy") {
