@@ -18,15 +18,14 @@ type StepResp = { id: string; snap: Snap; lines: Log[]; status: "active" | "fini
 
 /* ===== fórmulas mínimas p/ UI (precisão exibida) ===== */
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-const dodgeChance = (a: Attrs) => clamp(Math.floor(a.dex * 1.5), 0, 95);
-const accuracyPercent = (atkLv: number, defLv: number, atkMax: number, defMax: number) => {
+const dodgeChance = (a: Attrs) => clamp(Math.floor(a.dex * 0.3), 0, 55);
+const accuracyPercent = (atkLv: number, defLv: number) => {
   let acc = 100;
-  if (defLv > atkLv) acc -= (defLv - atkLv) * 5;
-  if (defMax > atkMax) acc -= (defMax - atkMax) * 2;
+  if (defLv > atkLv) acc -= (defLv - atkLv) * 4;
   return clamp(acc, 5, 100);
 };
-const finalAcc = (att: { level: number; hpMax: number }, def: { level: number; hpMax: number; attrs: Attrs }) => {
-  const base = accuracyPercent(att.level, def.level, att.hpMax, def.hpMax);
+const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) => {
+  const base = accuracyPercent(att.level, def.level);
   return clamp(base - dodgeChance(def.attrs), 5, 100);
 };
 
