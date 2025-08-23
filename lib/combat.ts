@@ -173,7 +173,7 @@ function resist(def: Unit, dtype: DmgType): number {
   if (dtype === "melee") return resistPhysicalMelee(def.attrs);
   if (dtype === "ranged") return resistPhysicalRanged(def.attrs);
   if (dtype === "magic")  return resistMagic(def.attrs);
-  return resistMental(def.attrs);
+  if (dtype === "mental") return resistMental(def.attrs);
 }
 
 /* ===== Resolução de ação ===== */
