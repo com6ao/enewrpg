@@ -77,6 +77,11 @@ export default function ArenaPage() {
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
   const [progMin, setProgMin] = useState(false); // minimizar progresso
 
+  // --- FX de corte (slash) ---
+  const [pSlash, setPSlash] = useState(false);
+  const [eSlash, setESlash] = useState(false);
+  const prevHpRef = useRef<{ p: number; e: number } | null>(null);
+
   // refs de autoscroll
   const battleRef = useRef<HTMLDivElement>(null);
   const calcRef = useRef<HTMLDivElement>(null);
@@ -152,6 +157,23 @@ export default function ArenaPage() {
     if (calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight;
   }, [showCalc, snap?.calc]);
 
+  // detecta queda de HP para ativar slash FX
+  useEffect(() => {
+    if (!snap) return;
+    const cur = { p: snap.player.hp, e: snap.enemy.hp };
+    if (prevHpRef.current) {
+      if (cur.p < prevHpRef.current.p) {
+        setPSlash(true);
+        setTimeout(() => setPSlash(false), 380);
+      }
+      if (cur.e < prevHpRef.current.e) {
+        setESlash(true);
+        setTimeout(() => setESlash(false), 380);
+      }
+    }
+    prevHpRef.current = cur;
+  }, [snap?.player.hp, snap?.enemy.hp]);
+
   const accPlayer = snap ? finalAcc(
     { level: snap.player.level },
     { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }
@@ -188,13 +210,11 @@ export default function ArenaPage() {
   /* ===== ordem de turnos (trilha + tokens) ===== */
   const turnTrail = useMemo(() => {
     if (!snap) return [];
-    // usa mesma heurística de antes: estima próximos 8 “ticks” alternando por velocidade (dex+wis)
     const pSpd = snap.srv.player.attrs.dex + snap.srv.player.attrs.wis;
     const eSpd = snap.srv.enemy.attrs.dex + snap.srv.enemy.attrs.wis;
     const seq: ("player"|"enemy")[] = [];
     let p = 0, e = 0;
     for (let i=0;i<10;i++){
-      // quem “enche” primeiro
       if (p <= e) { seq.push("player"); p += Math.max(1, 1000/(pSpd+1)); }
       else        { seq.push("enemy");  e += Math.max(1, 1000/(eSpd+1)); }
     }
@@ -258,10 +278,11 @@ export default function ArenaPage() {
             <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {/* PLAYER */}
               <div style={{ ...card, position: "relative" }}>
-                {/* avatar grande + animação simples de slash */}
                 <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#1f6feb", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(31,111,235,.6)" }}>
                   <span style={{ fontSize: 22, color: "#fff" }}>🧑‍🎤</span>
                 </div>
+                {/* slash FX */}
+                {pSlash && <SlashFX />}
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
                   <strong>Você</strong><span>Lv {snap.player.level}</span>
@@ -285,6 +306,8 @@ export default function ArenaPage() {
                 <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#ef4444", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(239,68,68,.6)" }}>
                   <span style={{ fontSize: 22, color: "#fff" }}>👹</span>
                 </div>
+                {/* slash FX */}
+                {eSlash && <SlashFX />}
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
                   <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
@@ -342,7 +365,7 @@ export default function ArenaPage() {
               <div style={card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                   <strong>Seus atributos</strong>
-                  {/* XP (sem fonte real ainda: 0%) */}
+                  {/* XP (placeholder 0%) */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 11, opacity: 0.8 }}>XP</span>
                     <div style={{ width: 120 }}>
@@ -387,9 +410,9 @@ export default function ArenaPage() {
             </section>
           )}
 
-          {/* LOGS (batalha + cálculos) */}
-          <section style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
-            <div ref={battleRef} style={{ ...card, maxHeight: 280, overflow: "auto" }}>
+          {/* LOGS (batalha em cima, cálculos embaixo) */}
+          <section style={{ display: "grid", gap: 8 }}>
+            <div ref={battleRef} style={{ ...card, maxHeight: 220, padding: 10, overflow: "auto" }}>
               {(logs.length ? logs : snap?.log ?? []).map((l, i) => {
                 const d = decorate(l.text, l.side);
                 return (
@@ -399,15 +422,16 @@ export default function ArenaPage() {
                 );
               })}
             </div>
-            <aside style={card}>
+
+            <aside style={{ ...card, padding: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Cálculos</h3>
-                <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "6px 8px", borderRadius: 8, background: "#1f2937", fontSize: 12 }}>
+                <h3 style={{ marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Cálculos</h3>
+                <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "4px 8px", borderRadius: 6, background: "#1f2937", fontSize: 12 }}>
                   {showCalc ? "Ocultar" : "Ver"}
                 </button>
               </div>
               {showCalc ? (
-                <div ref={calcRef} style={{ fontSize: 12, maxHeight: 280, overflow: "auto" }}>
+                <div ref={calcRef} style={{ fontSize: 12, maxHeight: 180, overflow: "auto" }}>
                   {(snap?.calc ?? []).map((c, i) => (
                     <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
                   ))}
@@ -533,5 +557,41 @@ function ActionBtn({ onClick, label, meta }: { onClick: () => void; label: strin
         {meta && <span style={{ fontSize: 11, opacity: 0.9 }}>{meta}</span>}
       </div>
     </button>
+  );
+}
+
+/* --- Efeito visual de “slash/corte” quando há perda de HP --- */
+function SlashFX() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.style.opacity = "0";
+      el.style.transform = "translate(-10px, -10px) rotate(-24deg) scale(1.05)";
+    });
+  }, []);
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        left: -18,
+        top: -18,
+        width: 96,
+        height: 96,
+        pointerEvents: "none",
+        opacity: 0.95,
+        transform: "translate(0,0) rotate(-24deg) scale(1)",
+        transition: "transform 380ms ease, opacity 380ms ease",
+        background:
+          "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 50%, rgba(255,255,255,0) 100%)",
+        filter: "drop-shadow(0 0 6px rgba(255,255,255,.7))",
+        maskImage:
+          "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 35%, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)",
+        WebkitMaskImage:
+          "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 35%, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)",
+      }}
+    />
   );
 }
