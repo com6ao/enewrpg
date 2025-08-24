@@ -135,28 +135,37 @@ export default function ArenaPage() {
   }
 
   async function start() {
-    setBusy(true);
-    setEnded(null);
-    setLogs([]);
-    setArenaId(null);
-    setSnap(null);
-    pendingCmd.current = null;
+  setBusy(true);
+  setEnded(null);
+  setLogs([]);
+  setArenaId(null);
+  setSnap(null);
+  pendingCmd.current = null;
 
-    try {
-      const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
-      if (!r.ok) { alert(await r.text()); setBusy(false); return; }
-      const data = (await r.json()) as StartResp;
-
-      setArenaId(data.id);
-      setSnap(data.snap);
-    } finally {
-      setBusy(false);
+  try {
+    const r = await fetch("/api/arena", {
+      method: "POST",
+      body: JSON.stringify({ op: "start" }),
+    });
+    if (!r.ok) {
+      alert(await r.text());
+      return;
     }
-    loop((await new Promise<string>((ok)=>ok as any))(arenaId as any) || (arenaId as any)); // no-op to satisfy TS
-    // acima é irrelevante em runtime, loop real começa abaixo:
-    if (arenaId) loop(arenaId);
-  }
 
+    const data = (await r.json()) as StartResp;
+
+    // salva estado com o snapshot inicial
+    setArenaId(data.id);
+    setSnap(data.snap);
+
+    // inicia o loop somente no cliente (evita erro no build/SSR)
+    if (typeof window !== "undefined") {
+      loop(data.id);
+    }
+  } finally {
+    setBusy(false);
+  }
+}
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
 
