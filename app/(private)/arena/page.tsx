@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /* ===== tipos ===== */
 type Log = { text: string; side: "neutral" | "player" | "enemy" };
@@ -11,13 +11,12 @@ type Snap = {
   enemy: UnitPub;
   log: Log[];
   calc: Calc[];
-  // mantém campos já usados pela UI
   srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
 };
 type StartResp = { id: string; snap: Snap };
 type StepResp = { id: string; snap: Snap; lines: Log[]; status: "active" | "finished"; winner: null | "player" | "enemy" | "draw"; cursor: number };
 
-/* ===== fórmulas mínimas p/ UI (precisão exibida) ===== */
+/* ===== fórmulas mínimas p/ UI ===== */
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const dodgeChance = (a: Attrs) => clamp(Math.floor(a.dex * 0.3), 0, 55);
 const accuracyPercent = (atkLv: number, defLv: number) => {
@@ -30,160 +29,42 @@ const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) 
   return clamp(base - dodgeChance(def.attrs), 5, 100);
 };
 
-/* ===== UI helpers ===== */
-const atbSpeed = (a: Attrs) => 0.4 + (a.dex + a.wis) * 0.08; // mesma fórmula do motor
+// mesmas fórmulas básicas da lib para estimar dano
+const meleeAttack = (a: Attrs) => Math.floor(a.str * 1.8);
+const rangedAttack = (a: Attrs) => a.dex + Math.floor(a.str * 0.5);
+const magicAttack  = (a: Attrs) => Math.floor(a.intt * 1.8);
+const mentalAttack = (a: Attrs) => a.wis;
 
-function Bar({
-  value,
-  color = "#2ecc71",
-  smoothMs = 40,
-}: { value: number; color?: string; smoothMs?: number }) {
-  const w = Math.max(0, Math.min(100, Math.round(value)));
-  return (
-    <div
-      style={{
-        height: 10,
-        background: "#222",
-        borderRadius: 6,
-        overflow: "hidden",
-        position: "relative",
-      }}
-    >
-      <div
-        style={{
-          width: `${w}%`,
-          height: "100%",
-          background: color,
-          transition: `width ${smoothMs}ms linear`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: `calc(${w}% - 1px)`,
-          width: 2,
-          height: "100%",
-          background: "rgba(255,255,255,.9)",
-          boxShadow: "0 0 6px rgba(255,255,255,.9)",
-          transition: `left ${smoothMs}ms linear`,
-          pointerEvents: "none",
-        }}
-      />
-    </div>
-  );
+const resistPhysicalMelee  = (a: Attrs) => a.str + Math.floor(a.dex * 0.5) + a.con;
+const resistPhysicalRanged = (a: Attrs) => a.dex + Math.floor(a.str * 0.5) + a.con;
+const resistMagic          = (a: Attrs) => a.intt + a.con;
+const resistMental         = (a: Attrs) => a.wis + a.con;
+
+function estBasicBase(att: Attrs) {
+  const ops = [
+    { base: meleeAttack(att),  kind: "melee" as const },
+    { base: magicAttack(att),  kind: "magic" as const },
+    { base: rangedAttack(att), kind: "ranged" as const },
+    { base: mentalAttack(att), kind: "mental" as const },
+  ];
+  ops.sort((a,b)=>b.base-a.base);
+  return ops[0];
+}
+function estResist(def: Attrs, kind: "melee"|"magic"|"ranged"|"mental") {
+  if (kind === "melee")  return resistPhysicalMelee(def);
+  if (kind === "magic")  return resistMagic(def);
+  if (kind === "ranged") return resistPhysicalRanged(def);
+  return resistMental(def);
+}
+// dano estimado sem CRIT e sem true-damage, com a mesma redução ~0.35 da resistência
+function estimateDamage(base: number, defRes: number) {
+  return Math.max(1, base - Math.floor(defRes * 0.35));
 }
 
+/* ==== util UI ==== */
 const card: React.CSSProperties = { background: "#0b0b0b", border: "1px solid #1e1e1e", borderRadius: 12, padding: 12 };
-
-function AttrCard({
-  title,
-  attrs,
-  compare,
-  level,
-  accShown,
-}: {
-  title: string;
-  attrs: Attrs | null;
-  compare: Attrs | null;
-  level: number | null;
-  accShown?: number | null;
-}) {
-  const arrow = (a: number, b: number) => {
-    const d = a - b;
-    const s = d >= 10 ? "↑↑↑" : d >= 5 ? "↑↑" : d > 0 ? "↑" : d <= -10 ? "↓↓↓" : d <= -5 ? "↓↓" : d < 0 ? "↓" : "";
-    const c = d > 0 ? "#2ecc71" : d < 0 ? "#e74c3c" : "#9aa0a6";
-    return <span style={{ marginLeft: 4, fontSize: 11, color: c }}>{s}</span>;
-  };
-  if (!attrs)
-    return (
-      <div style={card}>
-        <strong>{title}</strong>
-        <div className="muted">Atributos indisponíveis</div>
-      </div>
-    );
-  return (
-    <div style={card}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <strong>{title}</strong>
-        <span className="muted">Lv {level ?? "?"}</span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6, fontSize: 12 }}>
-        <div>STR {attrs.str}{compare && arrow(attrs.str, compare.str)}</div>
-        <div>DEX {attrs.dex}{compare && arrow(attrs.dex, compare.dex)}</div>
-        <div>INT {attrs.intt}{compare && arrow(attrs.intt, compare.intt)}</div>
-        <div>WIS {attrs.wis}{compare && arrow(attrs.wis, compare.wis)}</div>
-        <div>CHA {attrs.cha}{compare && arrow(attrs.cha, compare.cha)}</div>
-        <div>CON {attrs.con}{compare && arrow(attrs.con, compare.con)}</div>
-        <div>LUCK {attrs.luck}{compare && arrow(attrs.luck, compare.luck)}</div>
-      </div>
-      {typeof accShown === "number" && (
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-          Precisão efetiva contra o alvo: <b>{accShown}%</b>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ==== nome do estágio (mesma lógica do servidor) ==== */
 const stageName = (s: number) =>
   s === 1 ? "Rato Selvagem" : s === 2 ? "Lobo Faminto" : s === 3 ? "Goblin Batedor" : `Elite ${s}`;
-
-/* ==== simulação simples da fila de turnos (visual) ==== */
-function computeTurnQueue(s: Snap, n = 8) {
-  const P = { id: "player" as const, atb: Math.min(100, Math.max(0, s.player.atb)), spd: atbSpeed(s.srv.player.attrs) };
-  const E = { id: "enemy"  as const, atb: Math.min(100, Math.max(0, s.enemy.atb)),  spd: atbSpeed(s.srv.enemy.attrs)  };
-
-  const q: Array<"player"|"enemy"> = [];
-  let p = { ...P }, e = { ...E };
-
-  for (let i = 0; i < 200 && q.length < n; i++) {
-    const needP = Math.max(0, 100 - p.atb);
-    const needE = Math.max(0, 100 - e.atb);
-    const t = Math.min(needP / p.spd, needE / e.spd);
-    p.atb = Math.min(120, p.atb + p.spd * t);
-    e.atb = Math.min(120, e.atb + e.spd * t);
-    if (p.atb >= 100 && (p.atb >= e.atb || e.atb < 100)) {
-      q.push("player"); p.atb = Math.max(0, p.atb - 100);
-    } else if (e.atb >= 100) {
-      q.push("enemy");  e.atb = Math.max(0, e.atb - 100);
-    }
-  }
-  return { queue: q, now: s.player.atb >= 100 ? "player" : s.enemy.atb >= 100 ? "enemy" : null };
-}
-
-function TurnTrack({ snap }: { snap: Snap }) {
-  const { queue, now } = computeTurnQueue(snap, 8);
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 12, opacity: .9, marginBottom: 6 }}>Ordem de turnos</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6 }}>
-        {queue.map((who, i) => {
-          const isNow = i === 0 && !!now;
-          const bg = who === "player" ? "rgba(34,197,94,.18)" : "rgba(239,68,68,.18)";
-          const bd = who === "player" ? "1px solid rgba(34,197,94,.35)" : "1px solid rgba(239,68,68,.35)";
-          const icon = who === "player" ? "👑" : "😈";
-          return (
-            <div key={i} style={{
-              height: 28, borderRadius: 8, background: bg, border: bd,
-              display: "flex", justifyContent: "center", alignItems: "center", position: "relative"
-            }}>
-              <span style={{ fontSize: 14 }}>{icon}</span>
-              {isNow && (
-                <div style={{
-                  position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)",
-                  fontSize: 10, padding: "2px 6px", borderRadius: 6,
-                  background: "#111", border: "1px solid #2a2a2a"
-                }}>agora</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 /* ===== Página ===== */
 export default function ArenaPage() {
@@ -194,14 +75,11 @@ export default function ArenaPage() {
   const [auto, setAuto] = useState(true);
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
+  const [progMin, setProgMin] = useState(false); // minimizar progresso
 
-  // animações sutis de avatar
-  const [animP, setAnimP] = useState<"hit"|"crit"|"dodge"|"reduce"|null>(null);
-  const [animE, setAnimE] = useState<"hit"|"crit"|"dodge"|"reduce"|null>(null);
-
-  // refs para autoscroll
+  // refs de autoscroll
   const battleRef = useRef<HTMLDivElement>(null);
-  const calcRef   = useRef<HTMLDivElement>(null);
+  const calcRef = useRef<HTMLDivElement>(null);
 
   // ação pendente do jogador
   type Cmd =
@@ -221,7 +99,7 @@ export default function ArenaPage() {
     return (await r.json()) as StepResp;
   }
 
-  // ====== LOOP com pausa quando Auto off e sem ação ======
+  // LOOP com pausa quando Auto off e sem ação
   async function loop(id: string) {
     if (timer.current) clearTimeout(timer.current);
 
@@ -233,24 +111,7 @@ export default function ArenaPage() {
     const res = await stepOnce(id);
     if (!res) return;
 
-    if (res.lines?.length) {
-      setLogs((p) => [...p, ...res.lines]);
-
-      // animação rápida baseada no último log visível
-      const last = res.lines[res.lines.length - 1];
-      const t = last.text.toLowerCase();
-      const setFor = last.side === "enemy" ? setAnimE : last.side === "player" ? setAnimP : null;
-      if (setFor) {
-        let kind: typeof animP = null;
-        if (t.includes("crit")) kind = "crit";
-        else if (t.includes("erra")) kind = "dodge";
-        else if (t.includes("redução de dano")) kind = "reduce";
-        else if (t.includes("causa")) kind = "hit";
-        setFor(kind);
-        setTimeout(() => setFor(null), 450);
-      }
-    }
-
+    if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
 
     if (res.status === "finished") {
@@ -277,20 +138,19 @@ export default function ArenaPage() {
     setArenaId(data.id);
     setSnap(data.snap);
     setBusy(false);
-
     loop(data.id);
   }
 
-  // autoscroll dos logs
-  useEffect(() => {
-    if (battleRef.current) battleRef.current.scrollTop = battleRef.current.scrollHeight;
-  }, [logs]);
-  useEffect(() => {
-    if (showCalc && calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight;
-  }, [showCalc, snap?.calc]);
-
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
+
+  // autoscroll logs
+  useEffect(() => {
+    if (battleRef.current) battleRef.current.scrollTop = battleRef.current.scrollHeight;
+  }, [logs, snap?.log]);
+  useEffect(() => {
+    if (calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight;
+  }, [showCalc, snap?.calc]);
 
   const accPlayer = snap ? finalAcc(
     { level: snap.player.level },
@@ -308,11 +168,13 @@ export default function ArenaPage() {
       .replace(/\(crit\)/gi, '(crit) 💥')
       .replace(/\btrue[- ]?dano:? ?sim\b/gi, 'true:sim ☀️')
       .replace(/\bredução de dano acionada\b/gi, 'redução de dano acionada 🌙');
+
     let color = "#e5e7eb";
     if (/erra|erro|miss/i.test(t)) color = "#f6c453";
     else if (/esquiv|dodge/i.test(t)) color = "#60a5fa";
     else if (side === "player") color = "#22c55e";
     else if (side === "enemy") color = "#ef4444";
+
     t = t.replace(/\b(\d+)\b/g, (m) => `<b>${m}</b>`);
     return { __html: t, color };
   }
@@ -320,14 +182,63 @@ export default function ArenaPage() {
   /* ===== dados da coluna direita (estágios) ===== */
   const stage = snap?.srv?.stage ?? 1;
   const goldTotal = snap?.srv?.gold ?? 0;
-  const lastStageToShow = Math.max(stage + 4, 5);
+  const lastStageToShow = Math.max(stage + 4, 7);
   const stageRows = Array.from({ length: lastStageToShow }, (_, i) => i + 1);
-  const [showProg, setShowProg] = useState(true);
+
+  /* ===== ordem de turnos (trilha + tokens) ===== */
+  const turnTrail = useMemo(() => {
+    if (!snap) return [];
+    // usa mesma heurística de antes: estima próximos 8 “ticks” alternando por velocidade (dex+wis)
+    const pSpd = snap.srv.player.attrs.dex + snap.srv.player.attrs.wis;
+    const eSpd = snap.srv.enemy.attrs.dex + snap.srv.enemy.attrs.wis;
+    const seq: ("player"|"enemy")[] = [];
+    let p = 0, e = 0;
+    for (let i=0;i<10;i++){
+      // quem “enche” primeiro
+      if (p <= e) { seq.push("player"); p += Math.max(1, 1000/(pSpd+1)); }
+      else        { seq.push("enemy");  e += Math.max(1, 1000/(eSpd+1)); }
+    }
+    return seq;
+  }, [snap?.srv.player.attrs, snap?.srv.enemy.attrs, snap?.player?.hp, snap?.enemy?.hp]);
+
+  // ===== meta das skills (dano/acc/mp/atributo) =====
+  const skillMeta = useMemo(() => {
+    if (!snap) return null;
+    const A = snap.srv.player.attrs;
+    const D = snap.srv.enemy.attrs;
+    const acc = accPlayer ?? 0;
+
+    const basic = (() => {
+      const best = estBasicBase(A);
+      const res  = estResist(D, best.kind);
+      const dmg  = estimateDamage(best.base, res);
+      return { label: "Ataque básico", dmg, acc, mp: 0, stat: "—" };
+    })();
+
+    const golpe = (() => {
+      const base = Math.floor(meleeAttack(A) * 1.3);
+      const res  = estResist(D, "melee");
+      return { label: "Golpe Poderoso", dmg: estimateDamage(base, res), acc, mp: 10, stat: "STR" };
+    })();
+
+    const arcana = (() => {
+      const base = Math.floor(magicAttack(A) * 1.5);
+      const res  = estResist(D, "magic");
+      return { label: "Explosão Arcana", dmg: estimateDamage(base, res), acc, mp: 12, stat: "INT" };
+    })();
+
+    const tiro = (() => {
+      const base = Math.floor(rangedAttack(A) * 1.4);
+      const res  = estResist(D, "ranged");
+      return { label: "Tiro Preciso", dmg: estimateDamage(base, res), acc, mp: 8, stat: "DEX" };
+    })();
+
+    return { basic, golpe, arcana, tiro };
+  }, [snap, accPlayer]);
 
   return (
-    <main style={{ maxWidth: 1120, margin: "0 auto", padding: 16 }}>
-      {/* layout em 2 colunas: conteúdo + coluna direita */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 12 }}>
+    <main style={{ maxWidth: 1280, margin: "0 auto", padding: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
         {/* ESQUERDA */}
         <div style={{ display: "grid", gap: 12 }}>
           <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -342,107 +253,149 @@ export default function ArenaPage() {
             </div>
           </header>
 
-          {/* HUD: HP + ATB */}
+          {/* HUD: HP + MP + Avatares (sem barra de Ação) */}
           {snap && (
             <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 999, background: "#1f6feb",
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      marginRight: 8,
-                      transform: animP === "crit" ? "scale(1.15)" : animP === "dodge" ? "translateY(-2px)" : "none",
-                      boxShadow: animP === "hit" ? "0 0 12px rgba(255,255,255,.2)" :
-                                 animP === "reduce" ? "0 0 12px rgba(147,197,253,.35)" : "none",
-                      transition: "all .18s ease"
-                    }}>🧑</div>
-                    <strong>Você</strong>
-                  </div>
-                  <span>Lv {snap.player.level}</span>
+              {/* PLAYER */}
+              <div style={{ ...card, position: "relative" }}>
+                {/* avatar grande + animação simples de slash */}
+                <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#1f6feb", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(31,111,235,.6)" }}>
+                  <span style={{ fontSize: 22, color: "#fff" }}>🧑‍🎤</span>
                 </div>
-                <Bar value={(snap.player.hp / snap.player.hpMax) * 100} />
-                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.player.hp}/{snap.player.hpMax}</div>
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-                <Bar value={snap.player.atb} color="#00bcd4" />
+
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
+                  <strong>Você</strong><span>Lv {snap.player.level}</span>
+                </div>
+
+                {/* HP */}
+                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
+                  HP {snap.player.hp}/{snap.player.hpMax}
+                </div>
+                <Bar value={(snap.player.hp / snap.player.hpMax) * 100} color="#2ecc71" />
+
+                {/* MP */}
+                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
+                  MP {snap.player.mp}/{snap.player.mpMax}
+                </div>
+                <Bar value={(snap.player.mp / snap.player.mpMax) * 100} color="#8a63d2" />
               </div>
-              <div style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 999, background: "#ef4444",
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      marginRight: 8,
-                      transform: animE === "crit" ? "scale(1.15)" : animE === "dodge" ? "translateY(-2px)" : "none",
-                      boxShadow: animE === "hit" ? "0 0 12px rgba(255,255,255,.18)" :
-                                 animE === "reduce" ? "0 0 12px rgba(147,197,253,.30)" : "none",
-                      transition: "all .18s ease"
-                    }}>👹</div>
-                    <strong>{snap.enemy.name}</strong>
-                  </div>
-                  <span>Lv {snap.enemy.level}</span>
+
+              {/* ENEMY */}
+              <div style={{ ...card, position: "relative" }}>
+                <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#ef4444", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(239,68,68,.6)" }}>
+                  <span style={{ fontSize: 22, color: "#fff" }}>👹</span>
                 </div>
-                <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} />
-                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>HP {snap.enemy.hp}/{snap.enemy.hpMax}</div>
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>Ação</div>
-                <Bar value={snap.enemy.atb} color="#ff9800" />
+
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
+                  <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
+                </div>
+
+                {/* HP */}
+                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
+                  HP {snap.enemy.hp}/{snap.enemy.hpMax}
+                </div>
+                <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} color="#2ecc71" />
+
+                {/* MP */}
+                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
+                  MP {snap.enemy.mp}/{snap.enemy.mpMax}
+                </div>
+                <Bar value={(snap.enemy.mp / snap.enemy.mpMax) * 100} color="#8a63d2" />
               </div>
             </section>
           )}
 
-          {/* Trilha de turnos */}
-          {snap && <TurnTrack snap={snap} />}
-
-          {/* Atributos + precisão efetiva */}
+          {/* ORDEM DE TURNOS (com trilha) */}
           {snap && (
-            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <AttrCard title="Seus atributos" attrs={snap.srv.player.attrs} compare={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
-              <AttrCard title="Atributos do inimigo" attrs={snap.srv.enemy.attrs} compare={snap.srv.player.attrs} level={snap.enemy.level} accShown={accEnemy} />
+            <section>
+              <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 6 }}>Ordem de turnos</div>
+              <div style={{
+                position: "relative",
+                height: 40,
+                borderRadius: 10,
+                background: "linear-gradient(180deg,#0e0e0e,#0b0b0b)",
+                border: "1px solid #1a1a1a",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 10px",
+                gap: 10,
+                overflowX: "auto"
+              }}>
+                {turnTrail.map((who, i) => (
+                  <div key={i} title={who === "player" ? "Você" : snap.enemy.name}
+                       style={{
+                         minWidth: 34, height: 22, borderRadius: 8, display: "flex",
+                         alignItems: "center", justifyContent: "center",
+                         background: who === "player" ? "rgba(46,204,113,.15)" : "rgba(239,68,68,.15)",
+                         border: `1px solid ${who === "player" ? "rgba(46,204,113,.4)" : "rgba(239,68,68,.4)"}`
+                       }}>
+                    <span style={{ fontSize: 13 }}>{who === "player" ? "👑" : "👹"}</span>
+                  </div>
+                ))}
+              </div>
             </section>
           )}
 
-          {/* Controles de AÇÃO do jogador */}
-          {arenaId && snap && (
-            <section style={{ ...card, display: "grid", gap: 8 }}>
-              <div style={{ fontWeight: 600 }}>Suas ações</div>
+          {/* ATRIBUTOS + XP */}
+          {snap && (
+            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={card}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <strong>Seus atributos</strong>
+                  {/* XP (sem fonte real ainda: 0%) */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, opacity: 0.8 }}>XP</span>
+                    <div style={{ width: 120 }}>
+                      <Bar value={0} color="#29b6f6" />
+                    </div>
+                  </div>
+                </div>
+                <AttrGrid a={snap.srv.player.attrs} b={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
+              </div>
+
+              <div style={card}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <strong>Atributos do inimigo</strong><span>Lv {snap.enemy.level}</span>
+                </div>
+                <AttrGrid a={snap.srv.enemy.attrs} b={snap.srv.player.attrs} level={snap.enemy.level} accShown={accEnemy} />
+              </div>
+            </section>
+          )}
+
+          {/* SUAS AÇÕES (compacto) */}
+          {arenaId && snap && skillMeta && (
+            <section style={{ ...card, display: "grid", gap: 8, padding: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Suas ações</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <button onClick={() => queue({ kind: "basic" })} className="btn" style={{ padding: "8px 10px", background: "#1f2937", borderRadius: 8 }}>
-                  Ataque básico
-                </button>
-                <button onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
-                  Golpe Poderoso
-                </button>
-                <button onClick={() => queue({ kind: "skill", id: "explosao_arcana" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
-                  Explosão Arcana
-                </button>
-                <button onClick={() => queue({ kind: "skill", id: "tiro_preciso" })} className="btn" style={{ padding: "8px 10px", background: "#273449", borderRadius: 8 }}>
-                  Tiro Preciso
-                </button>
-                <button onClick={() => queue({ kind: "buff", id: "foco" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
-                  Foco
-                </button>
-                <button onClick={() => queue({ kind: "buff", id: "fortalecer" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
-                  Fortalecer
-                </button>
-                <button onClick={() => queue({ kind: "buff", id: "enfraquecer" })} className="btn" style={{ padding: "8px 10px", background: "#324157", borderRadius: 8 }}>
-                  Enfraquecer
-                </button>
+                <ActionBtn onClick={() => queue({ kind: "basic" })}
+                           label="Ataque básico"
+                           meta={`DMG≈${skillMeta.basic.dmg} • ACC≈${skillMeta.basic.acc}% • MP ${skillMeta.basic.mp}`} />
+                <ActionBtn onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })}
+                           label="Golpe Poderoso"
+                           meta={`DMG≈${skillMeta.golpe.dmg} • ACC≈${skillMeta.golpe.acc}% • MP ${skillMeta.golpe.mp} • ${skillMeta.golpe.stat}`} />
+                <ActionBtn onClick={() => queue({ kind: "skill", id: "explosao_arcana" })}
+                           label="Explosão Arcana"
+                           meta={`DMG≈${skillMeta.arcana.dmg} • ACC≈${skillMeta.arcana.acc}% • MP ${skillMeta.arcana.mp} • ${skillMeta.arcana.stat}`} />
+                <ActionBtn onClick={() => queue({ kind: "skill", id: "tiro_preciso" })}
+                           label="Tiro Preciso"
+                           meta={`DMG≈${skillMeta.tiro.dmg} • ACC≈${skillMeta.tiro.acc}% • MP ${skillMeta.tiro.mp} • ${skillMeta.tiro.stat}`} />
+                <ActionBtn onClick={() => queue({ kind: "buff", id: "foco" })}        label="Foco"        meta="+ACERTO por 2T" />
+                <ActionBtn onClick={() => queue({ kind: "buff", id: "fortalecer" })}  label="Fortalecer"  meta="+DANO por 2T" />
+                <ActionBtn onClick={() => queue({ kind: "buff", id: "enfraquecer" })} label="Enfraquecer" meta="-RESIST do alvo por 2T" />
               </div>
               <div style={{ fontSize: 12, opacity: 0.8 }}>A ação escolhida é usada automaticamente quando sua barra “Ação” atinge 100.</div>
             </section>
           )}
 
-          {/* Logs + Cálculos */}
-          <section style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }}>
+          {/* LOGS (batalha + cálculos) */}
+          <section style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
             <div ref={battleRef} style={{ ...card, maxHeight: 280, overflow: "auto" }}>
-              {logs.map((l, i) => {
+              {(logs.length ? logs : snap?.log ?? []).map((l, i) => {
                 const d = decorate(l.text, l.side);
                 return (
-                  <div
-                    key={i}
-                    style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
-                    dangerouslySetInnerHTML={{ __html: d.__html }}
-                  />
+                  <div key={i}
+                       style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
+                       dangerouslySetInnerHTML={{ __html: d.__html }} />
                 );
               })}
             </div>
@@ -480,20 +433,19 @@ export default function ArenaPage() {
           )}
         </div>
 
-        {/* DIREITA: nova coluna com estágios/progresso (minimizável) */}
+        {/* DIREITA: Progresso (minimizável) */}
         <aside style={{ ...card, position: "sticky", top: 12, height: "fit-content" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
             <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Progresso da Arena</h3>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ fontSize: 12, opacity: 0.9 }}>💰 Ouro: <b>{goldTotal}</b></div>
-              <button onClick={() => setShowProg(v => !v)}
-                style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, background: "#1f2937" }}>
-                {showProg ? "Minimizar" : "Mostrar"}
+              <button onClick={() => setProgMin(v => !v)} style={{ padding: "4px 8px", background: "#1f2937", borderRadius: 6, fontSize: 12 }}>
+                {progMin ? "Expandir" : "Minimizar"}
               </button>
             </div>
           </div>
 
-          {showProg && (
+          {!progMin && (
             <>
               <div style={{ fontSize: 12, marginBottom: 8 }}>
                 Estágio atual: <b>{stage}</b>
@@ -531,5 +483,55 @@ export default function ArenaPage() {
         </aside>
       </div>
     </main>
+  );
+}
+
+/* ==== Componentes auxiliares ==== */
+function Bar({ value, color = "#2ecc71" }: { value: number; color?: string }) {
+  const w = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div style={{ height: 10, background: "#222", borderRadius: 6, overflow: "hidden" }}>
+      <div style={{ width: `${w}%`, height: "100%", background: color, transition: "width 160ms linear" }} />
+    </div>
+  );
+}
+
+function AttrGrid({ a, b, level, accShown }: { a: Attrs; b: Attrs; level: number; accShown?: number | null }) {
+  const arrow = (x: number, y: number) => {
+    const d = x - y;
+    const s = d >= 10 ? "↑↑↑" : d >= 5 ? "↑↑" : d > 0 ? "↑" : d <= -10 ? "↓↓↓" : d <= -5 ? "↓↓" : d < 0 ? "↓" : "";
+    const c = d > 0 ? "#2ecc71" : d < 0 ? "#e74c3c" : "#9aa0a6";
+    return <span style={{ marginLeft: 4, fontSize: 11, color: c }}>{s}</span>;
+  };
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6, fontSize: 12 }}>
+        <div>STR {a.str}{arrow(a.str, b.str)}</div>
+        <div>DEX {a.dex}{arrow(a.dex, b.dex)}</div>
+        <div>INT {a.intt}{arrow(a.intt, b.intt)}</div>
+        <div>WIS {a.wis}{arrow(a.wis, b.wis)}</div>
+        <div>CHA {a.cha}{arrow(a.cha, b.cha)}</div>
+        <div>CON {a.con}{arrow(a.con, b.con)}</div>
+        <div>LUCK {a.luck}{arrow(a.luck, b.luck)}</div>
+      </div>
+      {typeof accShown === "number" && (
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
+          Precisão efetiva contra o alvo: <b>{accShown}%</b>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ActionBtn({ onClick, label, meta }: { onClick: () => void; label: string; meta?: string }) {
+  return (
+    <button onClick={onClick}
+            className="btn"
+            style={{ padding: "8px 10px", background: "#1f2937", borderRadius: 8, fontSize: 14, lineHeight: 1 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+        <span style={{ fontWeight: 600 }}>{label}</span>
+        {meta && <span style={{ fontSize: 11, opacity: 0.9 }}>{meta}</span>}
+      </div>
+    </button>
   );
 }
