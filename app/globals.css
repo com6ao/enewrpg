@@ -117,3 +117,11 @@ p{ margin: 8px 0; }
 .input{font-size:16px}
 .input:focus{outline:2px solid var(--ring);outline-offset:2px;border-color:var(--primary)}
 .form .btn{margin-top:4px;width:100%}
+
+/* ===== Arena (escopo por body.arena-page) ===== */
+body.arena-page .bag-modal{ /* só para documentação; estilos inline já garantem */ }
+body.arena-page .bag-panel{ /* idem */ }
+
+/* Se existir um painel lateral global de equipamentos,
+   aplique a classe utilitária abaixo nesse painel para escondê-lo só na Arena */
+body.arena-page .hidden-on-arena{ display: none !important; }
