@@ -14,7 +14,7 @@ type Snap = {
   srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
 };
 type StartResp = { id: string; snap: Snap };
-type StepResp = { id: string; snap: Snap; lines: Log[]; status: "active" | "finished"; winner: null | "player" | "enemy" | "draw"; cursor: number };
+type StepResp  = { id: string; snap: Snap; lines: Log[]; status: "active" | "finished"; winner: null | "player" | "enemy" | "draw"; cursor: number };
 
 /* ===== fórmulas mínimas p/ UI ===== */
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -56,7 +56,7 @@ function estResist(def: Attrs, kind: "melee"|"magic"|"ranged"|"mental") {
   if (kind === "ranged") return resistPhysicalRanged(def);
   return resistMental(def);
 }
-// dano estimado sem CRIT e sem true-damage, com a mesma redução ~0.35 da resistência
+// dano estimado sem CRIT/true-dmg, mesma redução ~0.35
 function estimateDamage(base: number, defRes: number) {
   return Math.max(1, base - Math.floor(defRes * 0.35));
 }
@@ -75,16 +75,13 @@ export default function ArenaPage() {
   const [auto, setAuto] = useState(true);
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
-  const [progMin, setProgMin] = useState(false); // minimizar progresso
-
-  // --- FX de corte (slash) ---
-  const [pSlash, setPSlash] = useState(false);
-  const [eSlash, setESlash] = useState(false);
-  const prevHpRef = useRef<{ p: number; e: number } | null>(null);
+  const [progMin, setProgMin] = useState(false);   // minimizar progresso
+  const [bagOpen, setBagOpen] = useState(false);   // mochila (equip/itens)
+  const [waiting, setWaiting] = useState(false);   // spinner enquanto espera resposta
 
   // refs de autoscroll
   const battleRef = useRef<HTMLDivElement>(null);
-  const calcRef = useRef<HTMLDivElement>(null);
+  const calcRef   = useRef<HTMLDivElement>(null);
 
   // ação pendente do jogador
   type Cmd =
@@ -99,20 +96,21 @@ export default function ArenaPage() {
   async function stepOnce(id: string) {
     const cmd = pendingCmd.current;
     pendingCmd.current = null;
-    const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "step", id, cmd }) });
-    if (!r.ok) return null;
+    setWaiting(true);          // <<< loading ON
+    const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "step", id, cmd }) })
+      .catch(() => null);
+    setWaiting(false);         // <<< loading OFF
+    if (!r || !r.ok) return null;
     return (await r.json()) as StepResp;
   }
 
   // LOOP com pausa quando Auto off e sem ação
   async function loop(id: string) {
     if (timer.current) clearTimeout(timer.current);
-
     if (!auto && !pendingCmd.current) {
       timer.current = setTimeout(() => loop(id), 120);
       return;
     }
-
     const res = await stepOnce(id);
     if (!res) return;
 
@@ -124,7 +122,6 @@ export default function ArenaPage() {
       if (auto) timer.current = setTimeout(() => loop(id), 450);
       return;
     }
-
     timer.current = setTimeout(() => loop(id), 450);
   }
 
@@ -147,32 +144,11 @@ export default function ArenaPage() {
   }
 
   // fila de ação do jogador
-  const queue = (c: Cmd) => { pendingCmd.current = c; };
+  const queue = (c: Cmd) => { if (!waiting) pendingCmd.current = c; };
 
   // autoscroll logs
-  useEffect(() => {
-    if (battleRef.current) battleRef.current.scrollTop = battleRef.current.scrollHeight;
-  }, [logs, snap?.log]);
-  useEffect(() => {
-    if (calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight;
-  }, [showCalc, snap?.calc]);
-
-  // detecta queda de HP para ativar slash FX
-  useEffect(() => {
-    if (!snap) return;
-    const cur = { p: snap.player.hp, e: snap.enemy.hp };
-    if (prevHpRef.current) {
-      if (cur.p < prevHpRef.current.p) {
-        setPSlash(true);
-        setTimeout(() => setPSlash(false), 380);
-      }
-      if (cur.e < prevHpRef.current.e) {
-        setESlash(true);
-        setTimeout(() => setESlash(false), 380);
-      }
-    }
-    prevHpRef.current = cur;
-  }, [snap?.player.hp, snap?.enemy.hp]);
+  useEffect(() => { if (battleRef.current) battleRef.current.scrollTop = battleRef.current.scrollHeight; }, [logs, snap?.log]);
+  useEffect(() => { if (calcRef.current)   calcRef.current.scrollTop   = calcRef.current.scrollHeight;   }, [showCalc, snap?.calc]);
 
   const accPlayer = snap ? finalAcc(
     { level: snap.player.level },
@@ -190,13 +166,11 @@ export default function ArenaPage() {
       .replace(/\(crit\)/gi, '(crit) 💥')
       .replace(/\btrue[- ]?dano:? ?sim\b/gi, 'true:sim ☀️')
       .replace(/\bredução de dano acionada\b/gi, 'redução de dano acionada 🌙');
-
     let color = "#e5e7eb";
     if (/erra|erro|miss/i.test(t)) color = "#f6c453";
     else if (/esquiv|dodge/i.test(t)) color = "#60a5fa";
     else if (side === "player") color = "#22c55e";
     else if (side === "enemy") color = "#ef4444";
-
     t = t.replace(/\b(\d+)\b/g, (m) => `<b>${m}</b>`);
     return { __html: t, color };
   }
@@ -258,12 +232,20 @@ export default function ArenaPage() {
 
   return (
     <main style={{ maxWidth: 1280, margin: "0 auto", padding: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
         {/* ESQUERDA */}
         <div style={{ display: "grid", gap: 12 }}>
           <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h1 style={{ fontSize: 24 }}>Arena</h1>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {/* Mochila */}
+              <button
+                onClick={() => setBagOpen(v => !v)}
+                title="Mochila"
+                style={{ padding: "6px 10px", borderRadius: 8, background: "#1f2937", fontSize: 16 }}
+              >
+                🎒
+              </button>
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto
               </label>
@@ -273,7 +255,32 @@ export default function ArenaPage() {
             </div>
           </header>
 
-          {/* HUD: HP + MP + Avatares (sem barra de Ação) */}
+          {/* Painel Mochila (drawer simples) */}
+          {bagOpen && (
+            <div style={{ ...card, padding: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <strong>Mochila</strong>
+                <button onClick={() => setBagOpen(false)} style={{ padding: "4px 8px", background: "#1f2937", borderRadius: 6, fontSize: 12 }}>Fechar</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
+                <div>
+                  <div style={{ opacity: .85, marginBottom: 4 }}>Equipamentos</div>
+                  <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, minHeight: 88, display: "grid", placeItems: "center", opacity: .8 }}>
+                    (em breve)
+                  </div>
+                </div>
+                <div>
+                  <div style={{ opacity: .85, marginBottom: 4 }}>Itens</div>
+                  <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, minHeight: 88, display: "grid", placeItems: "center", opacity: .8 }}>
+                    (em breve)
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, opacity: .9 }}>💰 Ouro total: <b>{snap?.srv.gold ?? 0}</b></div>
+            </div>
+          )}
+
+          {/* HUD: HP + MP */}
           {snap && (
             <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {/* PLAYER */}
@@ -281,23 +288,12 @@ export default function ArenaPage() {
                 <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#1f6feb", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(31,111,235,.6)" }}>
                   <span style={{ fontSize: 22, color: "#fff" }}>🧑‍🎤</span>
                 </div>
-                {/* slash FX */}
-                {pSlash && <SlashFX />}
-
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
                   <strong>Você</strong><span>Lv {snap.player.level}</span>
                 </div>
-
-                {/* HP */}
-                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
-                  HP {snap.player.hp}/{snap.player.hpMax}
-                </div>
+                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>HP {snap.player.hp}/{snap.player.hpMax}</div>
                 <Bar value={(snap.player.hp / snap.player.hpMax) * 100} color="#2ecc71" />
-
-                {/* MP */}
-                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
-                  MP {snap.player.mp}/{snap.player.mpMax}
-                </div>
+                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>MP {snap.player.mp}/{snap.player.mpMax}</div>
                 <Bar value={(snap.player.mp / snap.player.mpMax) * 100} color="#8a63d2" />
               </div>
 
@@ -306,29 +302,18 @@ export default function ArenaPage() {
                 <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#ef4444", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(239,68,68,.6)" }}>
                   <span style={{ fontSize: 22, color: "#fff" }}>👹</span>
                 </div>
-                {/* slash FX */}
-                {eSlash && <SlashFX />}
-
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
                   <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
                 </div>
-
-                {/* HP */}
-                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
-                  HP {snap.enemy.hp}/{snap.enemy.hpMax}
-                </div>
+                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>HP {snap.enemy.hp}/{snap.enemy.hpMax}</div>
                 <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} color="#2ecc71" />
-
-                {/* MP */}
-                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
-                  MP {snap.enemy.mp}/{snap.enemy.mpMax}
-                </div>
+                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>MP {snap.enemy.mp}/{snap.enemy.mpMax}</div>
                 <Bar value={(snap.enemy.mp / snap.enemy.mpMax) * 100} color="#8a63d2" />
               </div>
             </section>
           )}
 
-          {/* ORDEM DE TURNOS (com trilha) */}
+          {/* ORDEM DE TURNOS */}
           {snap && (
             <section>
               <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 6 }}>Ordem de turnos</div>
@@ -359,23 +344,48 @@ export default function ArenaPage() {
             </section>
           )}
 
+          {/* SUAS AÇÕES (primeiro) */}
+          {arenaId && snap && skillMeta && (
+            <section style={{ ...card, display: "grid", gap: 8, padding: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 600 }}>Suas ações</div>
+                {/* spinner pequeno quando esperando */}
+                {waiting && <Spinner small />}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, opacity: waiting ? .6 : 1 }}>
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "basic" })}
+                           label="Ataque básico"
+                           meta={`DMG≈${skillMeta.basic.dmg} • ACC≈${skillMeta.basic.acc}% • MP ${skillMeta.basic.mp}`} />
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })}
+                           label="Golpe Poderoso"
+                           meta={`DMG≈${skillMeta.golpe.dmg} • ACC≈${skillMeta.golpe.acc}% • MP ${skillMeta.golpe.mp} • ${skillMeta.golpe.stat}`} />
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "skill", id: "explosao_arcana" })}
+                           label="Explosão Arcana"
+                           meta={`DMG≈${skillMeta.arcana.dmg} • ACC≈${skillMeta.arcana.acc}% • MP ${skillMeta.arcana.mp} • ${skillMeta.arcana.stat}`} />
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "skill", id: "tiro_preciso" })}
+                           label="Tiro Preciso"
+                           meta={`DMG≈${skillMeta.tiro.dmg} • ACC≈${skillMeta.tiro.acc}% • MP ${skillMeta.tiro.mp} • ${skillMeta.tiro.stat}`} />
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "buff", id: "foco" })}        label="Foco"        meta="+ACERTO por 2T" />
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "buff", id: "fortalecer" })}  label="Fortalecer"  meta="+DANO por 2T" />
+                <ActionBtn disabled={waiting} onClick={() => queue({ kind: "buff", id: "enfraquecer" })} label="Enfraquecer" meta="-RESIST do alvo por 2T" />
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>A ação escolhida é usada automaticamente quando sua barra “Ação” atinge 100.</div>
+            </section>
+          )}
+
           {/* ATRIBUTOS + XP */}
           {snap && (
             <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                   <strong>Seus atributos</strong>
-                  {/* XP (placeholder 0%) */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 11, opacity: 0.8 }}>XP</span>
-                    <div style={{ width: 120 }}>
-                      <Bar value={0} color="#29b6f6" />
-                    </div>
+                    <div style={{ width: 120 }}><Bar value={0} color="#29b6f6" /></div>
                   </div>
                 </div>
                 <AttrGrid a={snap.srv.player.attrs} b={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
               </div>
-
               <div style={card}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <strong>Atributos do inimigo</strong><span>Lv {snap.enemy.level}</span>
@@ -385,34 +395,9 @@ export default function ArenaPage() {
             </section>
           )}
 
-          {/* SUAS AÇÕES (compacto) */}
-          {arenaId && snap && skillMeta && (
-            <section style={{ ...card, display: "grid", gap: 8, padding: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Suas ações</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <ActionBtn onClick={() => queue({ kind: "basic" })}
-                           label="Ataque básico"
-                           meta={`DMG≈${skillMeta.basic.dmg} • ACC≈${skillMeta.basic.acc}% • MP ${skillMeta.basic.mp}`} />
-                <ActionBtn onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })}
-                           label="Golpe Poderoso"
-                           meta={`DMG≈${skillMeta.golpe.dmg} • ACC≈${skillMeta.golpe.acc}% • MP ${skillMeta.golpe.mp} • ${skillMeta.golpe.stat}`} />
-                <ActionBtn onClick={() => queue({ kind: "skill", id: "explosao_arcana" })}
-                           label="Explosão Arcana"
-                           meta={`DMG≈${skillMeta.arcana.dmg} • ACC≈${skillMeta.arcana.acc}% • MP ${skillMeta.arcana.mp} • ${skillMeta.arcana.stat}`} />
-                <ActionBtn onClick={() => queue({ kind: "skill", id: "tiro_preciso" })}
-                           label="Tiro Preciso"
-                           meta={`DMG≈${skillMeta.tiro.dmg} • ACC≈${skillMeta.tiro.acc}% • MP ${skillMeta.tiro.mp} • ${skillMeta.tiro.stat}`} />
-                <ActionBtn onClick={() => queue({ kind: "buff", id: "foco" })}        label="Foco"        meta="+ACERTO por 2T" />
-                <ActionBtn onClick={() => queue({ kind: "buff", id: "fortalecer" })}  label="Fortalecer"  meta="+DANO por 2T" />
-                <ActionBtn onClick={() => queue({ kind: "buff", id: "enfraquecer" })} label="Enfraquecer" meta="-RESIST do alvo por 2T" />
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>A ação escolhida é usada automaticamente quando sua barra “Ação” atinge 100.</div>
-            </section>
-          )}
-
-          {/* LOGS (batalha em cima, cálculos embaixo) */}
-          <section style={{ display: "grid", gap: 8 }}>
-            <div ref={battleRef} style={{ ...card, maxHeight: 220, padding: 10, overflow: "auto" }}>
+          {/* LOGS (batalha abaixo das ações) */}
+          <section style={{ display: "grid", gap: 12 }}>
+            <div ref={battleRef} style={{ ...card, maxHeight: 260, overflow: "auto" }}>
               {(logs.length ? logs : snap?.log ?? []).map((l, i) => {
                 const d = decorate(l.text, l.side);
                 return (
@@ -422,16 +407,15 @@ export default function ArenaPage() {
                 );
               })}
             </div>
-
             <aside style={{ ...card, padding: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Cálculos</h3>
+                <h3 style={{ marginBottom: 4, fontWeight: 600, fontSize: 14 }}>Cálculos</h3>
                 <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "4px 8px", borderRadius: 6, background: "#1f2937", fontSize: 12 }}>
                   {showCalc ? "Ocultar" : "Ver"}
                 </button>
               </div>
               {showCalc ? (
-                <div ref={calcRef} style={{ fontSize: 12, maxHeight: 180, overflow: "auto" }}>
+                <div ref={calcRef} style={{ fontSize: 12, maxHeight: 220, overflow: "auto" }}>
                   {(snap?.calc ?? []).map((c, i) => (
                     <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
                   ))}
@@ -457,53 +441,60 @@ export default function ArenaPage() {
           )}
         </div>
 
-        {/* DIREITA: Progresso (minimizável) */}
-        <aside style={{ ...card, position: "sticky", top: 12, height: "fit-content" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Progresso da Arena</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ fontSize: 12, opacity: 0.9 }}>💰 Ouro: <b>{goldTotal}</b></div>
-              <button onClick={() => setProgMin(v => !v)} style={{ padding: "4px 8px", background: "#1f2937", borderRadius: 6, fontSize: 12 }}>
-                {progMin ? "Expandir" : "Minimizar"}
-              </button>
+        {/* DIREITA: Progresso (menor) + lojas pequenas */}
+        <aside style={{ display: "grid", gap: 10, alignSelf: "start", position: "sticky", top: 12 }}>
+          {/* Progresso reduzido */}
+          <div style={{ ...card, padding: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h3 style={{ marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Progresso da Arena</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ fontSize: 11, opacity: 0.9 }}>💰 <b>{goldTotal}</b></div>
+                <button onClick={() => setProgMin(v => !v)} style={{ padding: "3px 6px", background: "#1f2937", borderRadius: 6, fontSize: 11 }}>
+                  {progMin ? "Expandir" : "Minimizar"}
+                </button>
+              </div>
             </div>
+
+            {!progMin && (
+              <>
+                <div style={{ fontSize: 11, marginBottom: 6 }}>Estágio atual: <b>{stage}</b></div>
+                <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 72px", background: "#111", padding: "4px 6px", fontWeight: 600, fontSize: 11 }}>
+                    <div>Est.</div><div>Inimigo</div><div style={{ textAlign: "right" }}>Status</div>
+                  </div>
+                  <div>
+                    {stageRows.map((s) => {
+                      const isPast = s < stage;
+                      const isCurrent = s === stage && snap;
+                      const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
+                      return (
+                        <div key={s} style={{ display: "grid", gridTemplateColumns: "40px 1fr 72px", padding: "4px 6px", borderTop: "1px solid #151515", alignItems: "center", fontSize: 11 }}>
+                          <div>#{s}</div>
+                          <div>{stageName(s)}</div>
+                          <div style={{ textAlign: "right", opacity: 0.95 }}>
+                            {isPast ? "✔" : isCurrent ? `${hpPct}% HP` : "—"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, opacity: 0.8, marginTop: 6 }}>
+                  Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
+                </div>
+              </>
+            )}
           </div>
 
-          {!progMin && (
-            <>
-              <div style={{ fontSize: 12, marginBottom: 8 }}>
-                Estágio atual: <b>{stage}</b>
-              </div>
-
-              <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", background: "#111", padding: "6px 8px", fontWeight: 600, fontSize: 12 }}>
-                  <div>Est.</div>
-                  <div>Inimigo</div>
-                  <div style={{ textAlign: "right" }}>Status</div>
-                </div>
-                <div>
-                  {stageRows.map((s) => {
-                    const isPast = s < stage;
-                    const isCurrent = s === stage && snap;
-                    const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
-                    return (
-                      <div key={s} style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", padding: "6px 8px", borderTop: "1px solid #151515", alignItems: "center" }}>
-                        <div>#{s}</div>
-                        <div>{stageName(s)}</div>
-                        <div style={{ textAlign: "right", opacity: 0.95 }}>
-                          {isPast ? "✔ Concluído" : isCurrent ? `${hpPct}% HP` : "—"}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>
-                Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
-              </div>
-            </>
-          )}
+          {/* Loja NPC & Mercado – cards bem menores */}
+          <div style={{ ...card, padding: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Loja NPC</div>
+            <button style={{ width: "100%", padding: "6px 8px", background: "#1f2937", borderRadius: 8, fontSize: 12 }}>Abrir</button>
+          </div>
+          <div style={{ ...card, padding: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Mercado</div>
+            <button style={{ width: "100%", padding: "6px 8px", background: "#1f2937", borderRadius: 8, fontSize: 12 }}>Abrir</button>
+          </div>
         </aside>
       </div>
     </main>
@@ -511,6 +502,29 @@ export default function ArenaPage() {
 }
 
 /* ==== Componentes auxiliares ==== */
+function Spinner({ small = false }: { small?: boolean }) {
+  const size = small ? 14 : 20;
+  return (
+    <span
+      aria-label="carregando"
+      style={{
+        display: "inline-block",
+        width: size, height: size,
+        border: "2px solid rgba(255,255,255,.25)",
+        borderTopColor: "#fff",
+        borderRadius: "50%",
+        animation: "spin .8s linear infinite"
+      }}
+    />
+  );
+}
+// keyframes (inline)
+const style = document.createElement("style");
+style.innerHTML = `@keyframes spin{to{transform:rotate(360deg)}}`;
+if (typeof document !== "undefined" && !document.getElementById("spin-anim")) {
+  style.id = "spin-anim"; document.head.appendChild(style);
+}
+
 function Bar({ value, color = "#2ecc71" }: { value: number; color?: string }) {
   const w = Math.max(0, Math.min(100, Math.round(value)));
   return (
@@ -547,51 +561,18 @@ function AttrGrid({ a, b, level, accShown }: { a: Attrs; b: Attrs; level: number
   );
 }
 
-function ActionBtn({ onClick, label, meta }: { onClick: () => void; label: string; meta?: string }) {
+function ActionBtn({ onClick, label, meta, disabled }: { onClick: () => void; label: string; meta?: string; disabled?: boolean }) {
   return (
-    <button onClick={onClick}
-            className="btn"
-            style={{ padding: "8px 10px", background: "#1f2937", borderRadius: 8, fontSize: 14, lineHeight: 1 }}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="btn"
+      style={{ padding: "8px 10px", background: "#1f2937", borderRadius: 8, fontSize: 14, lineHeight: 1, opacity: disabled ? .6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
+    >
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
         <span style={{ fontWeight: 600 }}>{label}</span>
         {meta && <span style={{ fontSize: 11, opacity: 0.9 }}>{meta}</span>}
       </div>
     </button>
-  );
-}
-
-/* --- Efeito visual de “slash/corte” quando há perda de HP --- */
-function SlashFX() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.style.opacity = "0";
-      el.style.transform = "translate(-10px, -10px) rotate(-24deg) scale(1.05)";
-    });
-  }, []);
-  return (
-    <div
-      ref={ref}
-      style={{
-        position: "absolute",
-        left: -18,
-        top: -18,
-        width: 96,
-        height: 96,
-        pointerEvents: "none",
-        opacity: 0.95,
-        transform: "translate(0,0) rotate(-24deg) scale(1)",
-        transition: "transform 380ms ease, opacity 380ms ease",
-        background:
-          "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 50%, rgba(255,255,255,0) 100%)",
-        filter: "drop-shadow(0 0 6px rgba(255,255,255,.7))",
-        maskImage:
-          "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 35%, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)",
-        WebkitMaskImage:
-          "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 35%, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)",
-      }}
-    />
   );
 }
