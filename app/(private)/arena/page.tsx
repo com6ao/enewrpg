@@ -77,6 +77,7 @@ export default function ArenaPage() {
   const [loadingStep, setLoadingStep] = useState(false); // loading entre turnos/ações
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
   const [progMin, setProgMin] = useState(false); // minimizar progresso
+  const [bagOpen, setBagOpen] = useState(false); // painel da mochila
 
   // --- FX de corte (slash) ---
   const [pSlash, setPSlash] = useState(false);
@@ -135,37 +136,35 @@ export default function ArenaPage() {
   }
 
   async function start() {
-  setBusy(true);
-  setEnded(null);
-  setLogs([]);
-  setArenaId(null);
-  setSnap(null);
-  pendingCmd.current = null;
+    setBusy(true);
+    setEnded(null);
+    setLogs([]);
+    setArenaId(null);
+    setSnap(null);
+    pendingCmd.current = null;
 
-  try {
-    const r = await fetch("/api/arena", {
-      method: "POST",
-      body: JSON.stringify({ op: "start" }),
-    });
-    if (!r.ok) {
-      alert(await r.text());
-      return;
+    try {
+      const r = await fetch("/api/arena", {
+        method: "POST",
+        body: JSON.stringify({ op: "start" }),
+      });
+      if (!r.ok) {
+        alert(await r.text());
+        return;
+      }
+
+      const data = (await r.json()) as StartResp;
+
+      setArenaId(data.id);
+      setSnap(data.snap);
+
+      if (typeof window !== "undefined") {
+        loop(data.id);
+      }
+    } finally {
+      setBusy(false);
     }
-
-    const data = (await r.json()) as StartResp;
-
-    // salva estado com o snapshot inicial
-    setArenaId(data.id);
-    setSnap(data.snap);
-
-    // inicia o loop somente no cliente (evita erro no build/SSR)
-    if (typeof window !== "undefined") {
-      loop(data.id);
-    }
-  } finally {
-    setBusy(false);
   }
-}
   // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
 
@@ -277,13 +276,34 @@ export default function ArenaPage() {
   }, [snap, accPlayer]);
 
   return (
-    <main style={{ maxWidth: 1280, margin: "0 auto", padding: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
+    <main style={{ maxWidth: 1280, margin: "0 auto", padding: 16, position: "relative" }}>
+      {/* overlay de carregamento para qualquer ação lenta */}
+      {(busy || loadingStep) && (
+        <div style={{
+          position:"fixed", inset:0, background:"rgba(0,0,0,.25)", backdropFilter:"blur(1px)",
+          display:"grid", placeItems:"center", zIndex:50
+        }}>
+          <div style={{ ...card, padding: 10, display:"inline-flex", gap:8, alignItems:"center", fontSize:13 }}>
+            <Spinner/><span>Processando…</span>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 16 }}>
         {/* ESQUERDA */}
         <div style={{ display: "grid", gap: 12 }}>
           <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h1 style={{ fontSize: 24 }}>Arena</h1>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {/* botão mochila */}
+              <button
+                onClick={() => setBagOpen(v=>!v)}
+                title="Mochila"
+                style={{ padding:"6px 10px", borderRadius:8, background:"#1f2937", display:"inline-flex", gap:6, alignItems:"center", fontSize:13 }}
+              >
+                🎒 Mochila
+              </button>
+
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto
               </label>
@@ -293,7 +313,95 @@ export default function ArenaPage() {
             </div>
           </header>
 
-          {/* HUD: HP + MP + Avatares (sem barra de Ação) */}
+          {/* PAINEL MOCHILA */}
+          {bagOpen && (
+            <section style={{ ...card, padding: 10 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <strong style={{ fontSize:14 }}>Mochila</strong>
+                <div style={{ fontSize:12 }}>Ouro: <b>{snap?.srv?.gold ?? 0}</b></div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, fontSize:12 }}>
+                <div>
+                  <div style={{ opacity:.85, marginBottom:6 }}>Equipamentos</div>
+                  <div style={{ border:"1px solid #1e1e1e", borderRadius:8, padding:8, minHeight:80 }}>
+                    <div style={{ opacity:.8 }}>Slots: Elmo, Arma, Anel, Escudo, Peitoral, Calças, Botas</div>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ opacity:.85, marginBottom:6 }}>Itens</div>
+                  <div style={{ border:"1px solid #1e1e1e", borderRadius:8, padding:8, minHeight:80 }}>
+                    <div style={{ opacity:.8 }}>Poções, pergaminhos, consumíveis.</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* SUAS AÇÕES (primeiro) */}
+          {arenaId && snap && skillMeta && (
+            <section style={{ ...card, display: "grid", gap: 8, padding: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4, display:"flex", alignItems:"center", gap:8 }}>
+                Suas ações
+                {loadingStep && <Spinner small/>}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <ActionBtn onClick={() => queue({ kind: "basic" })}
+                           label="Ataque básico"
+                           meta={`DMG≈${skillMeta.basic.dmg} • ACC≈${skillMeta.basic.acc}% • MP ${skillMeta.basic.mp}`}
+                           disabled={loadingStep} loading={loadingStep}/>
+                <ActionBtn onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })}
+                           label="Golpe Poderoso"
+                           meta={`DMG≈${skillMeta.golpe.dmg} • ACC≈${skillMeta.golpe.acc}% • MP ${skillMeta.golpe.mp} • ${skillMeta.golpe.stat}`}
+                           disabled={loadingStep} loading={loadingStep}/>
+                <ActionBtn onClick={() => queue({ kind: "skill", id: "explosao_arcana" })}
+                           label="Explosão Arcana"
+                           meta={`DMG≈${skillMeta.arcana.dmg} • ACC≈${skillMeta.arcana.acc}% • MP ${skillMeta.arcana.mp} • ${skillMeta.arcana.stat}`}
+                           disabled={loadingStep} loading={loadingStep}/>
+                <ActionBtn onClick={() => queue({ kind: "skill", id: "tiro_preciso" })}
+                           label="Tiro Preciso"
+                           meta={`DMG≈${skillMeta.tiro.dmg} • ACC≈${skillMeta.tiro.acc}% • MP ${skillMeta.tiro.mp} • ${skillMeta.tiro.stat}`}
+                           disabled={loadingStep} loading={loadingStep}/>
+                <ActionBtn onClick={() => queue({ kind: "buff", id: "foco" })}        label="Foco"        meta="+ACERTO por 2T" disabled={loadingStep} loading={loadingStep}/>
+                <ActionBtn onClick={() => queue({ kind: "buff", id: "fortalecer" })}  label="Fortalecer"  meta="+DANO por 2T"    disabled={loadingStep} loading={loadingStep}/>
+                <ActionBtn onClick={() => queue({ kind: "buff", id: "enfraquecer" })} label="Enfraquecer" meta="-RESIST do alvo por 2T" disabled={loadingStep} loading={loadingStep}/>
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>Se houver lag, um indicador de carregamento aparece até a resolução da ação.</div>
+            </section>
+          )}
+
+          {/* LOGS imediatamente abaixo das ações */}
+          <section style={{ display: "grid", gap: 8 }}>
+            <div ref={battleRef} style={{ ...card, maxHeight: 220, padding: 10, overflow: "auto" }}>
+              {(logs.length ? logs : snap?.log ?? []).map((l, i) => {
+                const d = decorate(l.text, l.side);
+                return (
+                  <div key={i}
+                       style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
+                       dangerouslySetInnerHTML={{ __html: d.__html }} />
+                );
+              })}
+            </div>
+
+            <aside style={{ ...card, padding: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Cálculos</h3>
+                <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "4px 8px", borderRadius: 6, background: "#1f2937", fontSize: 12 }}>
+                  {showCalc ? "Ocultar" : "Ver"}
+                </button>
+              </div>
+              {showCalc ? (
+                <div ref={calcRef} style={{ fontSize: 12, maxHeight: 180, overflow: "auto" }}>
+                  {(snap?.calc ?? []).map((c, i) => (
+                    <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
+                  ))}
+                </div>
+              ) : (
+                <div className="muted" style={{ fontSize: 12 }}>Clique em “Ver” para exibir cálculos aqui.</div>
+              )}
+            </aside>
+          </section>
+
+          {/* HUD: HP + MP + Avatares */}
           {snap && (
             <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {/* PLAYER */}
@@ -301,20 +409,17 @@ export default function ArenaPage() {
                 <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#1f6feb", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(31,111,235,.6)" }}>
                   <span style={{ fontSize: 22, color: "#fff" }}>🧑‍🎤</span>
                 </div>
-                {/* slash FX */}
                 {pSlash && <SlashFX />}
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
                   <strong>Você</strong><span>Lv {snap.player.level}</span>
                 </div>
 
-                {/* HP */}
                 <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
                   HP {snap.player.hp}/{snap.player.hpMax}
                 </div>
                 <Bar value={(snap.player.hp / snap.player.hpMax) * 100} color="#2ecc71" />
 
-                {/* MP */}
                 <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
                   MP {snap.player.mp}/{snap.player.mpMax}
                 </div>
@@ -326,20 +431,17 @@ export default function ArenaPage() {
                 <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#ef4444", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(239,68,68,.6)" }}>
                   <span style={{ fontSize: 22, color: "#fff" }}>👹</span>
                 </div>
-                {/* slash FX */}
                 {eSlash && <SlashFX />}
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
                   <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
                 </div>
 
-                {/* HP */}
                 <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
                   HP {snap.enemy.hp}/{snap.enemy.hpMax}
                 </div>
                 <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} color="#2ecc71" />
 
-                {/* MP */}
                 <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
                   MP {snap.enemy.mp}/{snap.enemy.mpMax}
                 </div>
@@ -404,70 +506,6 @@ export default function ArenaPage() {
             </section>
           )}
 
-          {/* SUAS AÇÕES (compacto) */}
-          {arenaId && snap && skillMeta && (
-            <section style={{ ...card, display: "grid", gap: 8, padding: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, display:"flex", alignItems:"center", gap:8 }}>
-                Suas ações
-                {loadingStep && <Spinner small/>}
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <ActionBtn onClick={() => queue({ kind: "basic" })}
-                           label="Ataque básico"
-                           meta={`DMG≈${skillMeta.basic.dmg} • ACC≈${skillMeta.basic.acc}% • MP ${skillMeta.basic.mp}`}
-                           disabled={loadingStep} loading={loadingStep}/>
-                <ActionBtn onClick={() => queue({ kind: "skill", id: "golpe_poderoso" })}
-                           label="Golpe Poderoso"
-                           meta={`DMG≈${skillMeta.golpe.dmg} • ACC≈${skillMeta.golpe.acc}% • MP ${skillMeta.golpe.mp} • ${skillMeta.golpe.stat}`}
-                           disabled={loadingStep} loading={loadingStep}/>
-                <ActionBtn onClick={() => queue({ kind: "skill", id: "explosao_arcana" })}
-                           label="Explosão Arcana"
-                           meta={`DMG≈${skillMeta.arcana.dmg} • ACC≈${skillMeta.arcana.acc}% • MP ${skillMeta.arcana.mp} • ${skillMeta.arcana.stat}`}
-                           disabled={loadingStep} loading={loadingStep}/>
-                <ActionBtn onClick={() => queue({ kind: "skill", id: "tiro_preciso" })}
-                           label="Tiro Preciso"
-                           meta={`DMG≈${skillMeta.tiro.dmg} • ACC≈${skillMeta.tiro.acc}% • MP ${skillMeta.tiro.mp} • ${skillMeta.tiro.stat}`}
-                           disabled={loadingStep} loading={loadingStep}/>
-                <ActionBtn onClick={() => queue({ kind: "buff", id: "foco" })}        label="Foco"        meta="+ACERTO por 2T" disabled={loadingStep} loading={loadingStep}/>
-                <ActionBtn onClick={() => queue({ kind: "buff", id: "fortalecer" })}  label="Fortalecer"  meta="+DANO por 2T"    disabled={loadingStep} loading={loadingStep}/>
-                <ActionBtn onClick={() => queue({ kind: "buff", id: "enfraquecer" })} label="Enfraquecer" meta="-RESIST do alvo por 2T" disabled={loadingStep} loading={loadingStep}/>
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>A ação escolhida é usada automaticamente quando sua barra “Ação” atinge 100.</div>
-            </section>
-          )}
-
-          {/* LOGS (batalha em cima, cálculos embaixo) */}
-          <section style={{ display: "grid", gap: 8 }}>
-            <div ref={battleRef} style={{ ...card, maxHeight: 220, padding: 10, overflow: "auto" }}>
-              {(logs.length ? logs : snap?.log ?? []).map((l, i) => {
-                const d = decorate(l.text, l.side);
-                return (
-                  <div key={i}
-                       style={{ padding: "6px 4px", borderBottom: "1px solid #151515", color: d.color as string }}
-                       dangerouslySetInnerHTML={{ __html: d.__html }} />
-                );
-              })}
-            </div>
-
-            <aside style={{ ...card, padding: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Cálculos</h3>
-                <button onClick={() => setShowCalc((v) => !v)} style={{ padding: "4px 8px", borderRadius: 6, background: "#1f2937", fontSize: 12 }}>
-                  {showCalc ? "Ocultar" : "Ver"}
-                </button>
-              </div>
-              {showCalc ? (
-                <div ref={calcRef} style={{ fontSize: 12, maxHeight: 180, overflow: "auto" }}>
-                  {(snap?.calc ?? []).map((c, i) => (
-                    <div key={i} style={{ borderBottom: "1px solid #151515", padding: "4px 2px" }}>{c.text}</div>
-                  ))}
-                </div>
-              ) : (
-                <div className="muted" style={{ fontSize: 12 }}>Clique em “Ver” para exibir cálculos aqui.</div>
-              )}
-            </aside>
-          </section>
-
           {/* Resultado + próximo estágio */}
           {ended && (
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -483,53 +521,67 @@ export default function ArenaPage() {
           )}
         </div>
 
-        {/* DIREITA: Progresso (minimizável) */}
-        <aside style={{ ...card, position: "sticky", top: 12, height: "fit-content" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <h3 style={{ marginBottom: 8, fontWeight: 600 }}>Progresso da Arena</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ fontSize: 12, opacity: 0.9 }}>💰 Ouro: <b>{goldTotal}</b></div>
-              <button onClick={() => setProgMin(v => !v)} style={{ padding: "4px 8px", background: "#1f2937", borderRadius: 6, fontSize: 12 }}>
-                {progMin ? "Expandir" : "Minimizar"}
-              </button>
+        {/* DIREITA: Progresso (compacto + cards Loja/Mercado) */}
+        <aside style={{ position: "sticky", top: 12, height: "fit-content", display:"grid", gap:10 }}>
+          <div style={{ ...card, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h3 style={{ marginBottom: 4, fontWeight: 600, fontSize: 14 }}>Progresso da Arena</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                <div>💰 <b>{goldTotal}</b></div>
+                <button onClick={() => setProgMin(v => !v)} style={{ padding: "3px 6px", background: "#1f2937", borderRadius: 6, fontSize: 11 }}>
+                  {progMin ? "Expandir" : "Minimizar"}
+                </button>
+              </div>
             </div>
+
+            {!progMin && (
+              <>
+                <div style={{ fontSize: 11, marginBottom: 6 }}>
+                  Estágio atual: <b>{stage}</b>
+                </div>
+
+                <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 70px", background: "#111", padding: "4px 6px", fontWeight: 600, fontSize: 11 }}>
+                    <div>Est.</div>
+                    <div>Inimigo</div>
+                    <div style={{ textAlign: "right" }}>Status</div>
+                  </div>
+                  <div>
+                    {stageRows.map((s) => {
+                      const isPast = s < stage;
+                      const isCurrent = s === stage && snap;
+                      const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
+                      return (
+                        <div key={s} style={{ display: "grid", gridTemplateColumns: "44px 1fr 70px", padding: "4px 6px", borderTop: "1px solid #151515", alignItems: "center", fontSize: 11 }}>
+                          <div>#{s}</div>
+                          <div>{stageName(s)}</div>
+                          <div style={{ textAlign: "right", opacity: 0.95 }}>
+                            {isPast ? "✔" : isCurrent ? `${hpPct}%` : "—"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 10, opacity: 0.8, marginTop: 6 }}>
+                  Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
+                </div>
+              </>
+            )}
           </div>
 
-          {!progMin && (
-            <>
-              <div style={{ fontSize: 12, marginBottom: 8 }}>
-                Estágio atual: <b>{stage}</b>
-              </div>
-
-              <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", background: "#111", padding: "6px 8px", fontWeight: 600, fontSize: 12 }}>
-                  <div>Est.</div>
-                  <div>Inimigo</div>
-                  <div style={{ textAlign: "right" }}>Status</div>
-                </div>
-                <div>
-                  {stageRows.map((s) => {
-                    const isPast = s < stage;
-                    const isCurrent = s === stage && snap;
-                    const hpPct = isCurrent ? Math.round((snap!.enemy.hp / snap!.enemy.hpMax) * 100) : null;
-                    return (
-                      <div key={s} style={{ display: "grid", gridTemplateColumns: "54px 1fr 88px", padding: "6px 8px", borderTop: "1px solid #151515", alignItems: "center" }}>
-                        <div>#{s}</div>
-                        <div>{stageName(s)}</div>
-                        <div style={{ textAlign: "right", opacity: 0.95 }}>
-                          {isPast ? "✔ Concluído" : isCurrent ? `${hpPct}% HP` : "—"}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={{ fontSize: 11, opacity: 0.8, marginTop: 8 }}>
-                Dica: com “Auto” ligado, o próximo estágio inicia automaticamente ao derrotar o inimigo.
-              </div>
-            </>
-          )}
+          {/* Loja NPC e Mercado — cards bem menores */}
+          <div style={{ display:"grid", gap:8 }}>
+            <div style={{ ...card, padding:8 }}>
+              <div style={{ fontSize:12, fontWeight:600, marginBottom:4 }}>Loja NPC</div>
+              <div style={{ fontSize:11, opacity:.9 }}>Compra básica de poções e itens. <button style={{ padding:"3px 6px", fontSize:11, borderRadius:6, background:"#1f2937" }}>Abrir</button></div>
+            </div>
+            <div style={{ ...card, padding:8 }}>
+              <div style={{ fontSize:12, fontWeight:600, marginBottom:4 }}>Mercado</div>
+              <div style={{ fontSize:11, opacity:.9 }}>Trocas entre jogadores (placeholder). <button style={{ padding:"3px 6px", fontSize:11, borderRadius:6, background:"#1f2937" }}>Abrir</button></div>
+            </div>
+          </div>
         </aside>
       </div>
     </main>
