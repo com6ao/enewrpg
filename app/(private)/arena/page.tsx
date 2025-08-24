@@ -29,7 +29,6 @@ const finalAcc = (att: { level: number }, def: { level: number; attrs: Attrs }) 
   return clamp(base - dodgeChance(def.attrs), 5, 100);
 };
 
-// mesmas fórmulas básicas da lib para estimar dano
 const meleeAttack = (a: Attrs) => Math.floor(a.str * 1.8);
 const rangedAttack = (a: Attrs) => a.dex + Math.floor(a.str * 0.5);
 const magicAttack  = (a: Attrs) => Math.floor(a.intt * 1.8);
@@ -56,7 +55,6 @@ function estResist(def: Attrs, kind: "melee"|"magic"|"ranged"|"mental") {
   if (kind === "ranged") return resistPhysicalRanged(def);
   return resistMental(def);
 }
-// dano estimado sem CRIT e sem true-damage, com a mesma redução ~0.35 da resistência
 function estimateDamage(base: number, defRes: number) {
   return Math.max(1, base - Math.floor(defRes * 0.35));
 }
@@ -73,22 +71,25 @@ export default function ArenaPage() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [showCalc, setShowCalc] = useState(false);
   const [auto, setAuto] = useState(true);
-  const [busy, setBusy] = useState(false);          // loading do start
-  const [loadingStep, setLoadingStep] = useState(false); // loading entre turnos/ações
+  const [busy, setBusy] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(false);
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
-  const [progMin, setProgMin] = useState(false); // minimizar progresso
-  const [bagOpen, setBagOpen] = useState(false); // painel da mochila
+  const [progMin, setProgMin] = useState(false);
+  const [bagOpen, setBagOpen] = useState(false);
 
-  // --- FX de corte (slash) ---
+  // aplica classe no body para CSS escopado da Arena
+  useEffect(() => {
+    document.body.classList.add("arena-page");
+    return () => document.body.classList.remove("arena-page");
+  }, []);
+
   const [pSlash, setPSlash] = useState(false);
   const [eSlash, setESlash] = useState(false);
   const prevHpRef = useRef<{ p: number; e: number } | null>(null);
 
-  // refs de autoscroll
   const battleRef = useRef<HTMLDivElement>(null);
   const calcRef = useRef<HTMLDivElement>(null);
 
-  // ação pendente do jogador
   type Cmd =
     | { kind: "basic" }
     | { kind: "skill"; id: "golpe_poderoso" | "explosao_arcana" | "tiro_preciso" }
@@ -111,27 +112,21 @@ export default function ArenaPage() {
     }
   }
 
-  // LOOP com pausa quando Auto off e sem ação
   async function loop(id: string) {
     if (timer.current) clearTimeout(timer.current);
-
     if (!auto && !pendingCmd.current) {
       timer.current = setTimeout(() => loop(id), 120);
       return;
     }
-
     const res = await stepOnce(id);
     if (!res) return;
-
     if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
-
     if (res.status === "finished") {
       setEnded(res.winner);
       if (auto) timer.current = setTimeout(() => loop(id), 450);
       return;
     }
-
     timer.current = setTimeout(() => loop(id), 450);
   }
 
@@ -142,33 +137,17 @@ export default function ArenaPage() {
     setArenaId(null);
     setSnap(null);
     pendingCmd.current = null;
-
     try {
-      const r = await fetch("/api/arena", {
-        method: "POST",
-        body: JSON.stringify({ op: "start" }),
-      });
-      if (!r.ok) {
-        alert(await r.text());
-        return;
-      }
-
+      const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
+      if (!r.ok) { alert(await r.text()); return; }
       const data = (await r.json()) as StartResp;
-
       setArenaId(data.id);
       setSnap(data.snap);
-
-      if (typeof window !== "undefined") {
-        loop(data.id);
-      }
-    } finally {
-      setBusy(false);
-    }
+      if (typeof window !== "undefined") loop(data.id);
+    } finally { setBusy(false); }
   }
-  // fila de ação do jogador
   const queue = (c: Cmd) => { pendingCmd.current = c; };
 
-  // autoscroll logs
   useEffect(() => {
     if (battleRef.current) battleRef.current.scrollTop = battleRef.current.scrollHeight;
   }, [logs, snap?.log]);
@@ -176,57 +155,38 @@ export default function ArenaPage() {
     if (calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight;
   }, [showCalc, snap?.calc]);
 
-  // detecta queda de HP para ativar slash FX
   useEffect(() => {
     if (!snap) return;
     const cur = { p: snap.player.hp, e: snap.enemy.hp };
     if (prevHpRef.current) {
-      if (cur.p < prevHpRef.current.p) {
-        setPSlash(true);
-        setTimeout(() => setPSlash(false), 380);
-      }
-      if (cur.e < prevHpRef.current.e) {
-        setESlash(true);
-        setTimeout(() => setESlash(false), 380);
-      }
+      if (cur.p < prevHpRef.current.p) { setPSlash(true); setTimeout(() => setPSlash(false), 380); }
+      if (cur.e < prevHpRef.current.e) { setESlash(true); setTimeout(() => setESlash(false), 380); }
     }
     prevHpRef.current = cur;
   }, [snap?.player.hp, snap?.enemy.hp]);
 
-  const accPlayer = snap ? finalAcc(
-    { level: snap.player.level },
-    { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }
-  ) : null;
+  const accPlayer = snap ? finalAcc({ level: snap.player.level }, { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }) : null;
+  const accEnemy  = snap ? finalAcc({ level: snap.enemy.level }, { level: snap.player.level, attrs: snap.srv.player.attrs }) : null;
 
-  const accEnemy = snap ? finalAcc(
-    { level: snap.enemy.level },
-    { level: snap.player.level, attrs: snap.srv.player.attrs }
-  ) : null;
-
-  // ===== formatação do log (cores + ícones) =====
   function decorate(text: string, side: "neutral" | "player" | "enemy") {
     let t = text
       .replace(/\(crit\)/gi, '(crit) 💥')
       .replace(/\btrue[- ]?dano:? ?sim\b/gi, 'true:sim ☀️')
       .replace(/\bredução de dano acionada\b/gi, 'redução de dano acionada 🌙');
-
     let color = "#e5e7eb";
     if (/erra|erro|miss/i.test(t)) color = "#f6c453";
     else if (/esquiv|dodge/i.test(t)) color = "#60a5fa";
     else if (side === "player") color = "#22c55e";
     else if (side === "enemy") color = "#ef4444";
-
     t = t.replace(/\b(\d+)\b/g, (m) => `<b>${m}</b>`);
     return { __html: t, color };
   }
 
-  /* ===== dados da coluna direita (estágios) ===== */
   const stage = snap?.srv?.stage ?? 1;
   const goldTotal = snap?.srv?.gold ?? 0;
   const lastStageToShow = Math.max(stage + 4, 7);
   const stageRows = Array.from({ length: lastStageToShow }, (_, i) => i + 1);
 
-  /* ===== ordem de turnos (trilha + tokens) ===== */
   const turnTrail = useMemo(() => {
     if (!snap) return [];
     const pSpd = snap.srv.player.attrs.dex + snap.srv.player.attrs.wis;
@@ -240,104 +200,155 @@ export default function ArenaPage() {
     return seq;
   }, [snap?.srv.player.attrs, snap?.srv.enemy.attrs, snap?.player?.hp, snap?.enemy?.hp]);
 
-  // ===== meta das skills (dano/acc/mp/atributo) =====
   const skillMeta = useMemo(() => {
     if (!snap) return null;
     const A = snap.srv.player.attrs;
     const D = snap.srv.enemy.attrs;
     const acc = accPlayer ?? 0;
-
     const basic = (() => {
-      const best = estBasicBase(A);
-      const res  = estResist(D, best.kind);
+      const best = estBasicBase(A); const res = estResist(D, best.kind);
       const dmg  = estimateDamage(best.base, res);
       return { label: "Ataque básico", dmg, acc, mp: 0, stat: "—" };
     })();
-
     const golpe = (() => {
-      const base = Math.floor(meleeAttack(A) * 1.3);
-      const res  = estResist(D, "melee");
+      const base = Math.floor(meleeAttack(A) * 1.3); const res = estResist(D, "melee");
       return { label: "Golpe Poderoso", dmg: estimateDamage(base, res), acc, mp: 10, stat: "STR" };
     })();
-
     const arcana = (() => {
-      const base = Math.floor(magicAttack(A) * 1.5);
-      const res  = estResist(D, "magic");
+      const base = Math.floor(magicAttack(A) * 1.5); const res = estResist(D, "magic");
       return { label: "Explosão Arcana", dmg: estimateDamage(base, res), acc, mp: 12, stat: "INT" };
     })();
-
     const tiro = (() => {
-      const base = Math.floor(rangedAttack(A) * 1.4);
-      const res  = estResist(D, "ranged");
+      const base = Math.floor(rangedAttack(A) * 1.4); const res = estResist(D, "ranged");
       return { label: "Tiro Preciso", dmg: estimateDamage(base, res), acc, mp: 8, stat: "DEX" };
     })();
-
     return { basic, golpe, arcana, tiro };
   }, [snap, accPlayer]);
 
   return (
     <main style={{ maxWidth: 1280, margin: "0 auto", padding: 16, position: "relative" }}>
-      {/* overlay de carregamento para qualquer ação lenta */}
       {(busy || loadingStep) && (
-        <div style={{
-          position:"fixed", inset:0, background:"rgba(0,0,0,.25)", backdropFilter:"blur(1px)",
-          display:"grid", placeItems:"center", zIndex:50
-        }}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.25)", backdropFilter:"blur(1px)", display:"grid", placeItems:"center", zIndex:60 }}>
           <div style={{ ...card, padding: 10, display:"inline-flex", gap:8, alignItems:"center", fontSize:13 }}>
             <Spinner/><span>Processando…</span>
           </div>
         </div>
       )}
 
+      {/* Modal Mochila */}
+      {bagOpen && (
+        <div className="bag-modal" role="dialog" aria-modal="true" onClick={() => setBagOpen(false)}
+             style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"grid", placeItems:"center", zIndex:70 }}>
+          <div className="bag-panel" onClick={(e)=>e.stopPropagation()}
+               style={{ ...card, width:"min(720px, 92vw)", padding:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <strong style={{ fontSize:16 }}>Mochila</strong>
+              <div style={{ display:"flex", gap:12, alignItems:"center", fontSize:13 }}>
+                <span>Ouro: <b>{goldTotal}</b></span>
+                <button onClick={()=>setBagOpen(false)} style={{ padding:"6px 10px", borderRadius:8, background:"#1f2937" }}>Fechar</button>
+              </div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, fontSize:12 }}>
+              <div>
+                <div style={{ opacity:.85, marginBottom:6 }}>Equipamentos</div>
+                <div style={{ border:"1px solid #1e1e1e", borderRadius:8, padding:8, minHeight:120 }}>
+                  Slots: Elmo, Arma, Anel, Escudo, Peitoral, Calças, Botas
+                </div>
+              </div>
+              <div>
+                <div style={{ opacity:.85, marginBottom:6 }}>Itens</div>
+                <div style={{ border:"1px solid #1e1e1e", borderRadius:8, padding:8, minHeight:120 }}>
+                  Poções, pergaminhos, consumíveis.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 16 }}>
-        {/* ESQUERDA */}
+        {/* COLUNA PRINCIPAL */}
         <div style={{ display: "grid", gap: 12 }}>
           <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h1 style={{ fontSize: 24 }}>Arena</h1>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {/* botão mochila */}
-              <button
-                onClick={() => setBagOpen(v=>!v)}
-                title="Mochila"
-                style={{ padding:"6px 10px", borderRadius:8, background:"#1f2937", display:"inline-flex", gap:6, alignItems:"center", fontSize:13 }}
-              >
-                🎒 Mochila
-              </button>
-
+              <button onClick={() => setBagOpen(true)} title="Mochila"
+                      style={{ padding:"6px 10px", borderRadius:8, background:"#1f2937" }}>🎒 Mochila</button>
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto
               </label>
-              <button onClick={start} disabled={busy} style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71", display:"inline-flex", alignItems:"center", gap:6 }}>
+              <button onClick={start} disabled={busy}
+                      style={{ padding: "8px 12px", borderRadius: 8, background: "#2ecc71", display:"inline-flex", alignItems:"center", gap:6 }}>
                 {busy && <Spinner small/>} Lutar
               </button>
             </div>
           </header>
 
-          {/* PAINEL MOCHILA */}
-          {bagOpen && (
-            <section style={{ ...card, padding: 10 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                <strong style={{ fontSize:14 }}>Mochila</strong>
-                <div style={{ fontSize:12 }}>Ouro: <b>{snap?.srv?.gold ?? 0}</b></div>
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, fontSize:12 }}>
-                <div>
-                  <div style={{ opacity:.85, marginBottom:6 }}>Equipamentos</div>
-                  <div style={{ border:"1px solid #1e1e1e", borderRadius:8, padding:8, minHeight:80 }}>
-                    <div style={{ opacity:.8 }}>Slots: Elmo, Arma, Anel, Escudo, Peitoral, Calças, Botas</div>
+          {/* 1) HUD: LUTADORES */}
+          {snap && (
+            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <FighterCard you snap={snap} slash={pSlash} />
+              <FighterCard snap={snap} slash={eSlash} />
+            </section>
+          )}
+
+          {/* 2) ORDEM DE TURNOS */}
+          {snap && (
+            <section>
+              <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 6 }}>Ordem de turnos</div>
+              <div style={{
+                position: "relative",
+                height: 40,
+                borderRadius: 10,
+                background: "linear-gradient(180deg,#0e0e0e,#0b0b0b)",
+                border: "1px solid #1a1a1a",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 10px",
+                gap: 10,
+                overflowX: "auto"
+              }}>
+                {turnTrail.map((who, i) => (
+                  <div key={i}
+                       title={who === "player" ? "Você" : snap.enemy.name}
+                       style={{
+                         minWidth: 34, height: 22, borderRadius: 8, display: "flex",
+                         alignItems: "center", justifyContent: "center",
+                         background: who === "player" ? "rgba(46,204,113,.15)" : "rgba(239,68,68,.15)",
+                         border: `1px solid ${who === "player" ? "rgba(46,204,113,.4)" : "rgba(239,68,68,.4)"}`
+                       }}>
+                    <span style={{ fontSize: 13 }}>{who === "player" ? "👑" : "👹"}</span>
                   </div>
-                </div>
-                <div>
-                  <div style={{ opacity:.85, marginBottom:6 }}>Itens</div>
-                  <div style={{ border:"1px solid #1e1e1e", borderRadius:8, padding:8, minHeight:80 }}>
-                    <div style={{ opacity:.8 }}>Poções, pergaminhos, consumíveis.</div>
-                  </div>
-                </div>
+                ))}
               </div>
             </section>
           )}
 
-          {/* SUAS AÇÕES (primeiro) */}
+          {/* 3) ATRIBUTOS */}
+          {snap && (
+            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={card}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <strong>Seus atributos</strong>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, opacity: 0.8 }}>XP</span>
+                    <div style={{ width: 120 }}><Bar value={0} color="#29b6f6" /></div>
+                  </div>
+                </div>
+                <AttrGrid a={snap.srv.player.attrs} b={snap.srv.enemy.attrs} level={snap.player.level}
+                          accShown={snap ? finalAcc({level:snap.player.level},{level:snap.enemy.level,attrs:snap.srv.enemy.attrs}) : null}/>
+              </div>
+              <div style={card}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <strong>Atributos do inimigo</strong><span>Lv {snap.enemy.level}</span>
+                </div>
+                <AttrGrid a={snap.srv.enemy.attrs} b={snap.srv.player.attrs} level={snap.enemy.level}
+                          accShown={snap ? finalAcc({level:snap.enemy.level},{level:snap.player.level,attrs:snap.srv.player.attrs}) : null}/>
+              </div>
+            </section>
+          )}
+
+          {/* 4) SUAS AÇÕES */}
           {arenaId && snap && skillMeta && (
             <section style={{ ...card, display: "grid", gap: 8, padding: 10 }}>
               <div style={{ fontWeight: 600, marginBottom: 4, display:"flex", alignItems:"center", gap:8 }}>
@@ -365,11 +376,11 @@ export default function ArenaPage() {
                 <ActionBtn onClick={() => queue({ kind: "buff", id: "fortalecer" })}  label="Fortalecer"  meta="+DANO por 2T"    disabled={loadingStep} loading={loadingStep}/>
                 <ActionBtn onClick={() => queue({ kind: "buff", id: "enfraquecer" })} label="Enfraquecer" meta="-RESIST do alvo por 2T" disabled={loadingStep} loading={loadingStep}/>
               </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>Se houver lag, um indicador de carregamento aparece até a resolução da ação.</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>Se houver lag, o indicador de carregamento fica visível até resolver a ação.</div>
             </section>
           )}
 
-          {/* LOGS imediatamente abaixo das ações */}
+          {/* 5) LOGS */}
           <section style={{ display: "grid", gap: 8 }}>
             <div ref={battleRef} style={{ ...card, maxHeight: 220, padding: 10, overflow: "auto" }}>
               {(logs.length ? logs : snap?.log ?? []).map((l, i) => {
@@ -401,112 +412,7 @@ export default function ArenaPage() {
             </aside>
           </section>
 
-          {/* HUD: HP + MP + Avatares */}
-          {snap && (
-            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {/* PLAYER */}
-              <div style={{ ...card, position: "relative" }}>
-                <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#1f6feb", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(31,111,235,.6)" }}>
-                  <span style={{ fontSize: 22, color: "#fff" }}>🧑‍🎤</span>
-                </div>
-                {pSlash && <SlashFX />}
-
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
-                  <strong>Você</strong><span>Lv {snap.player.level}</span>
-                </div>
-
-                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
-                  HP {snap.player.hp}/{snap.player.hpMax}
-                </div>
-                <Bar value={(snap.player.hp / snap.player.hpMax) * 100} color="#2ecc71" />
-
-                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
-                  MP {snap.player.mp}/{snap.player.mpMax}
-                </div>
-                <Bar value={(snap.player.mp / snap.player.mpMax) * 100} color="#8a63d2" />
-              </div>
-
-              {/* ENEMY */}
-              <div style={{ ...card, position: "relative" }}>
-                <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999, background: "#ef4444", display: "grid", placeItems: "center", boxShadow: "0 0 10px rgba(239,68,68,.6)" }}>
-                  <span style={{ fontSize: 22, color: "#fff" }}>👹</span>
-                </div>
-                {eSlash && <SlashFX />}
-
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
-                  <strong>{snap.enemy.name}</strong><span>Lv {snap.enemy.level}</span>
-                </div>
-
-                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
-                  HP {snap.enemy.hp}/{snap.enemy.hpMax}
-                </div>
-                <Bar value={(snap.enemy.hp / snap.enemy.hpMax) * 100} color="#2ecc71" />
-
-                <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
-                  MP {snap.enemy.mp}/{snap.enemy.mpMax}
-                </div>
-                <Bar value={(snap.enemy.mp / snap.enemy.mpMax) * 100} color="#8a63d2" />
-              </div>
-            </section>
-          )}
-
-          {/* ORDEM DE TURNOS */}
-          {snap && (
-            <section>
-              <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 6 }}>Ordem de turnos</div>
-              <div style={{
-                position: "relative",
-                height: 40,
-                borderRadius: 10,
-                background: "linear-gradient(180deg,#0e0e0e,#0b0b0b)",
-                border: "1px solid #1a1a1a",
-                display: "flex",
-                alignItems: "center",
-                padding: "0 10px",
-                gap: 10,
-                overflowX: "auto"
-              }}>
-                {turnTrail.map((who, i) => (
-                  <div key={i} title={who === "player" ? "Você" : snap.enemy.name}
-                       style={{
-                         minWidth: 34, height: 22, borderRadius: 8, display: "flex",
-                         alignItems: "center", justifyContent: "center",
-                         background: who === "player" ? "rgba(46,204,113,.15)" : "rgba(239,68,68,.15)",
-                         border: `1px solid ${who === "player" ? "rgba(46,204,113,.4)" : "rgba(239,68,68,.4)"}`
-                       }}>
-                    <span style={{ fontSize: 13 }}>{who === "player" ? "👑" : "👹"}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ATRIBUTOS + XP */}
-          {snap && (
-            <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <strong>Seus atributos</strong>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, opacity: 0.8 }}>XP</span>
-                    <div style={{ width: 120 }}>
-                      <Bar value={0} color="#29b6f6" />
-                    </div>
-                  </div>
-                </div>
-                <AttrGrid a={snap.srv.player.attrs} b={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
-              </div>
-
-              <div style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <strong>Atributos do inimigo</strong><span>Lv {snap.enemy.level}</span>
-                </div>
-                <AttrGrid a={snap.srv.enemy.attrs} b={snap.srv.player.attrs} level={snap.enemy.level} accShown={accEnemy} />
-              </div>
-            </section>
-          )}
-
-          {/* Resultado + próximo estágio */}
+          {/* Resultado */}
           {ended && (
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <div style={{ opacity: 0.9 }}>
@@ -521,7 +427,7 @@ export default function ArenaPage() {
           )}
         </div>
 
-        {/* DIREITA: Progresso (compacto + cards Loja/Mercado) */}
+        {/* COLUNA DIREITA */}
         <aside style={{ position: "sticky", top: 12, height: "fit-content", display:"grid", gap:10 }}>
           <div style={{ ...card, padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -542,9 +448,7 @@ export default function ArenaPage() {
 
                 <div style={{ border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 70px", background: "#111", padding: "4px 6px", fontWeight: 600, fontSize: 11 }}>
-                    <div>Est.</div>
-                    <div>Inimigo</div>
-                    <div style={{ textAlign: "right" }}>Status</div>
+                    <div>Est.</div><div>Inimigo</div><div style={{ textAlign: "right" }}>Status</div>
                   </div>
                   <div>
                     {stageRows.map((s) => {
@@ -571,16 +475,13 @@ export default function ArenaPage() {
             )}
           </div>
 
-          {/* Loja NPC e Mercado — cards bem menores */}
-          <div style={{ display:"grid", gap:8 }}>
-            <div style={{ ...card, padding:8 }}>
-              <div style={{ fontSize:12, fontWeight:600, marginBottom:4 }}>Loja NPC</div>
-              <div style={{ fontSize:11, opacity:.9 }}>Compra básica de poções e itens. <button style={{ padding:"3px 6px", fontSize:11, borderRadius:6, background:"#1f2937" }}>Abrir</button></div>
-            </div>
-            <div style={{ ...card, padding:8 }}>
-              <div style={{ fontSize:12, fontWeight:600, marginBottom:4 }}>Mercado</div>
-              <div style={{ fontSize:11, opacity:.9 }}>Trocas entre jogadores (placeholder). <button style={{ padding:"3px 6px", fontSize:11, borderRadius:6, background:"#1f2937" }}>Abrir</button></div>
-            </div>
+          <div style={{ ...card, padding:8 }}>
+            <div style={{ fontSize:12, fontWeight:600, marginBottom:4 }}>Loja NPC</div>
+            <div style={{ fontSize:11, opacity:.9 }}>Compra básica de poções e itens. <button style={{ padding:"3px 6px", fontSize:11, borderRadius:6, background:"#1f2937" }}>Abrir</button></div>
+          </div>
+          <div style={{ ...card, padding:8 }}>
+            <div style={{ fontSize:12, fontWeight:600, marginBottom:4 }}>Mercado</div>
+            <div style={{ fontSize:11, opacity:.9 }}>Trocas entre jogadores (placeholder). <button style={{ padding:"3px 6px", fontSize:11, borderRadius:6, background:"#1f2937" }}>Abrir</button></div>
           </div>
         </aside>
       </div>
@@ -589,6 +490,31 @@ export default function ArenaPage() {
 }
 
 /* ==== Componentes auxiliares ==== */
+function FighterCard({ you = false, snap, slash }: { you?: boolean; snap: Snap; slash: boolean }) {
+  const unit = you ? snap.player : snap.enemy;
+  return (
+    <div style={{ ...card, position: "relative" }}>
+      <div style={{ position: "absolute", left: -8, top: -8, width: 56, height: 56, borderRadius: 9999,
+        background: you ? "#1f6feb" : "#ef4444", display: "grid", placeItems: "center",
+        boxShadow: you ? "0 0 10px rgba(31,111,235,.6)" : "0 0 10px rgba(239,68,68,.6)" }}>
+        <span style={{ fontSize: 22, color: "#fff" }}>{you ? "🧑‍🎤" : "👹"}</span>
+      </div>
+      {slash && <SlashFX />}
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, paddingLeft: 56 }}>
+        <strong>{you ? "Você" : unit.name}</strong><span>Lv {unit.level}</span>
+      </div>
+      <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, paddingLeft: 56 }}>
+        HP {unit.hp}/{unit.hpMax}
+      </div>
+      <Bar value={(unit.hp / unit.hpMax) * 100} color="#2ecc71" />
+      <div style={{ fontSize: 12, opacity: 0.85, margin: "8px 0 4px", paddingLeft: 56 }}>
+        MP {unit.mp}/{unit.mpMax}
+      </div>
+      <Bar value={(unit.mp / unit.mpMax) * 100} color="#8a63d2" />
+    </div>
+  );
+}
+
 function Bar({ value, color = "#2ecc71" }: { value: number; color?: string }) {
   const w = Math.max(0, Math.min(100, Math.round(value)));
   return (
@@ -640,7 +566,6 @@ function ActionBtn({ onClick, label, meta, disabled, loading }: { onClick: () =>
   );
 }
 
-/* --- Efeito visual de “slash/corte” quando há perda de HP --- */
 function SlashFX() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -676,7 +601,6 @@ function SlashFX() {
   );
 }
 
-/* --- Spinner SVG (safe no SSR) --- */
 function Spinner({ small = false }: { small?: boolean }) {
   const s = small ? 14 : 20;
   return (
