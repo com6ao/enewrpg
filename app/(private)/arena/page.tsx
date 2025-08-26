@@ -115,7 +115,7 @@ export default function ArenaPage() {
     pendingCmd.current = null;
     setLoadingStep(true);
     try {
-      const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "step", id, cmd }) });
+      const r = await fetch("/api/arena", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "step", id, cmd }) });
       if (!r.ok) {
         setArenaId(null);
         setSnap(null);
@@ -156,7 +156,7 @@ export default function ArenaPage() {
     setSnap(null);
     pendingCmd.current = null;
     try {
-      const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "start" }) });
+      const r = await fetch("/api/arena", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "start" }) });
       if (!r.ok) {
         alert(await r.text());
         return;
