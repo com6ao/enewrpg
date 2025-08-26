@@ -1,38 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-
-type Character = {
-  id: string;
-  name: string;
-  surname: string;
-  universe: string;
-  energy: string;
-  lvl: number;
-  xp: number;
-};
-
-type ResponseData = {
-  characters: Character[];
-  active_character_id: string | null;
-};
+import { useCharacterList } from "./useCharacterList";
 
 export default function CharactersIndex() {
-  const [chars, setChars] = useState<Character[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      const r = await fetch("/api/characters/list");
-      if (!r.ok) return;
-      const data: ResponseData = await r.json();
-      setChars(data.characters ?? []);
-      setActiveId(data.active_character_id ?? null);
-      setLoading(false);
-    }
-    load();
-  }, []);
+ const { chars, activeId, loading } = useCharacterList();
 
   return (
     <main className="container">
