@@ -16,6 +16,7 @@ type ResponseData = {
   characters: Character[];
   active_character_id: string | null;
 };
+import { useCharacterList } from "./useCharacterList";
 
 export default function CharactersIndex() {
   const [chars, setChars] = useState<Character[]>([]);
@@ -33,6 +34,7 @@ export default function CharactersIndex() {
     }
     load();
   }, []);
+  const { chars, activeId, loading } = useCharacterList();
 
   return (
     <main className="container">
@@ -58,17 +60,3 @@ export default function CharactersIndex() {
                 }}
               >
                 <div className="card-title">
-                  {c.name} {c.surname}
-                  {isActive && <span style={{ color: "#2ecc71", marginLeft: 6 }}>(Ativo)</span>}
-                </div>
-                <div className="muted">
-                  {c.universe} · {c.energy} · Lv {c.lvl} · XP {c.xp}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      }
-    </main>
-  );
-}
