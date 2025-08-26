@@ -2,10 +2,11 @@
 import {
   Attr, clamp, hp, mpMain,
   meleeAttack, rangedAttack, magicAttack, mentalAttack,
-  resistPhysicalMelee, resistPhysicalRanged, resistMagic, resistMental,
+  resistByKind, bestBasic, estimateDamage, accuracyFinal,
   attackSpeed, critChance, critMultiplier, trueDamageChance,
   damageReductionChance, damageReductionPercent,
-  dodgeChance, accuracyPercent
+  dodgeChance,
+  type DmgKind
 } from "./formulas";
 
 export type Calc = { text:string; side:"player"|"enemy" };
@@ -55,31 +56,23 @@ function buildUnit(id:"player"|"enemy",name:string,level:number,attrs?:Partial<A
   return { id,name,level,attrs:a,hp:hp0,hpMax:hp0,mp:mp0,mpMax:mp0,atb:0,buffs:{} };
 }
 
-type DmgType="melee"|"magic"|"ranged"|"mental";
-function bestBasic(att:Unit){ const arr:[number,DmgType,string][]=[
-  [meleeAttack(att.attrs),"melee","⚔️"],
-  [magicAttack(att.attrs),"magic","✨"],
-  [rangedAttack(att.attrs),"ranged","🏹"],
-  [mentalAttack(att.attrs),"mental","🧠"],
-]; arr.sort((a,b)=>b[0]-a[0]); const [base,dtype,icon]=arr[0]; return {base,dtype,icon}; }
-function resist(def:Unit,t:DmgType){ return t==="melee"?resistPhysicalMelee(def.attrs):t==="ranged"?resistPhysicalRanged(def.attrs):t==="magic"?resistMagic(def.attrs):resistMental(def.attrs); }
+const basicIcons:Record<DmgKind,string>={melee:"⚔️",magic:"✨",ranged:"🏹",mental:"🧠"};
 
 function tryHit(att:Unit,def:Unit){
-  const acc=accuracyPercent(att.level,def.level)+(att.buffs.accBonus??0);
   const dodge=dodgeChance(def.attrs);
-  const accRoll=clamp(acc-dodge,5,100);
+  const accRoll=accuracyFinal(att.level,def.level,def.attrs,att.buffs.accBonus??0);
   const miss=!roll(accRoll);
   const crit=!miss&&roll(critChance(att.attrs));
   const trueDmg=!miss&&roll(trueDamageChance(att.attrs));
   return {miss,crit,trueDmg,accUsed:accRoll,dodgeUsed:dodge};
 }
 
-function applyDamage(att:Unit,def:Unit,rawBase:number,dtype:DmgType,calc:Calc[],label:string){
+function applyDamage(att:Unit,def:Unit,rawBase:number,kind:DmgKind,calc:Calc[],label:string){
   let base=rawBase; if(att.buffs.dmgBonus) base=Math.floor(base*(1+att.buffs.dmgBonus/100));
   const h=tryHit(att,def); if(h.miss){ calc.push({side:att.id,text:`${label}: errou • acc=${h.accUsed}% vs dodge=${h.dodgeUsed}%`}); return {dmg:0,miss:true,crit:false}; }
-  let res=h.trueDmg?0:resist(def,dtype);
+  let res=h.trueDmg?0:resistByKind(def.attrs,kind);
   if(def.id==="enemy"&&att.id==="player"&&att.buffs.enemyResDown){ res=Math.max(0,Math.floor(res*(1-(att.buffs.enemyResDown/100)))); }
-  let dmg=Math.max(1, base - Math.floor(res*0.35));
+  let dmg=estimateDamage(base,res);
   if(h.crit) dmg=Math.floor((dmg*critMultiplier(att.attrs))/100);
   if(roll(damageReductionChance(def.attrs))){ dmg=Math.floor((dmg*(100-damageReductionPercent))/100); calc.push({side:def.id,text:`redução de dano acionada (-${damageReductionPercent}%)`}); }
   calc.push({side:att.id,text:`${label}: base=${base} • res=${res} • ${h.crit?"CRIT":"HIT"} • true=${h.trueDmg?"sim":"não"} • final=${dmg}`});
@@ -87,22 +80,22 @@ function applyDamage(att:Unit,def:Unit,rawBase:number,dtype:DmgType,calc:Calc[],
 }
 
 function doBasic(att:Unit,def:Unit,log:Log[],calc:Calc[]){
-  const b=bestBasic(att); att.nextIcon=b.icon;
-  const r=applyDamage(att,def,b.base,b.dtype,calc,"Ataque básico");
+  const b=bestBasic(att.attrs); att.nextIcon=basicIcons[b.kind];
+  const r=applyDamage(att,def,b.base,b.kind,calc,"Ataque básico");
   log.push(r.miss?{side:"neutral",text:`${att.name} erra o ataque`}:{side:att.id,text:`${att.name} causa ${r.dmg} de dano (${r.crit?"crit":"hit"})`});
 }
 
 function doSkill(att:Unit,def:Unit,id:SkillId|undefined,log:Log[],calc:Calc[]){
   if(!id) return doBasic(att,def,log,calc);
-  let base=0, dtype:DmgType="melee", mpCost=0, label="";
+  let base=0, kind:DmgKind="melee", mpCost=0, label="";
   switch(id){
-    case "golpe_poderoso": base=Math.floor(meleeAttack(att.attrs)*1.3); dtype="melee";  mpCost=10; label="Golpe Poderoso";  att.nextIcon="💥"; break;
-    case "explosao_arcana":base=Math.floor(magicAttack(att.attrs)*1.5); dtype="magic";  mpCost=12; label="Explosão Arcana"; att.nextIcon="🪄"; break;
-    case "tiro_preciso":  base=Math.floor(rangedAttack(att.attrs)*1.4);dtype="ranged"; mpCost=8;  label="Tiro Preciso";    att.nextIcon="🎯"; break;
+    case "golpe_poderoso": base=Math.floor(meleeAttack(att.attrs)*1.3); kind="melee";  mpCost=10; label="Golpe Poderoso";  att.nextIcon="💥"; break;
+    case "explosao_arcana":base=Math.floor(magicAttack(att.attrs)*1.5); kind="magic";  mpCost=12; label="Explosão Arcana"; att.nextIcon="🪄"; break;
+    case "tiro_preciso":  base=Math.floor(rangedAttack(att.attrs)*1.4);kind="ranged"; mpCost=8;  label="Tiro Preciso";    att.nextIcon="🎯"; break;
   }
   if(att.mp<mpCost){ calc.push({side:att.id,text:`${label}: MP insuficiente (${att.mp}/${mpCost})`}); return doBasic(att,def,log,calc); }
   att.mp-=mpCost;
-  const r=applyDamage(att,def,base,dtype,calc,label);
+  const r=applyDamage(att,def,base,kind,calc,label);
   log.push(r.miss?{side:"neutral",text:`${att.name} erra ${label}`}:{side:att.id,text:`${att.name} usa ${label} e causa ${r.dmg} de dano (${r.crit?"crit":"hit"})`});
 }
 
