@@ -10,6 +10,7 @@ type Character = {
   lvl: number;
   xp: number;
 };
+import { useCharacterList } from "../useCharacterList";
 
 export default function SelectCharacterPage() {
   const [chars, setChars] = useState<Character[]>([]);
@@ -26,6 +27,7 @@ export default function SelectCharacterPage() {
     }
     load();
   }, []);
+  const { chars, activeId, loading, setChars, setActiveId } = useCharacterList();
 
   async function selectCharacter(id: string) {
     const r = await fetch("/api/characters/select", {
@@ -51,36 +53,3 @@ export default function SelectCharacterPage() {
   return (
     <main className="container">
       <h1>Selecionar Personagem</h1>
-      {loading ? <p>carregando...</p> :
-        chars.map((c) => (
-          <div key={c.id} className="card" style={{ marginBottom: 12 }}>
-            <div className="card-title">
-              {c.name} {c.surname}
-              {activeId === c.id && <span style={{ color: "#2ecc71", marginLeft: 6 }}>(Ativo)</span>}
-            </div>
-            <div className="muted">{c.universe} · {c.energy} · Lv {c.lvl} · XP {c.xp}</div>
-
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button
-                className="btn"
-                disabled={activeId === c.id}
-                onClick={() => selectCharacter(c.id)}
-              >
-                {activeId === c.id ? "Selecionado" : "Selecionar"}
-              </button>
-
-              <button
-                className="btn"
-                style={{ background: "#e74c3c" }}
-                onClick={() => deleteCharacter(c.id)}
-              >
-                Excluir
-              </button>
-            </div>
-          </div>
-        ))
-      }
-      {(!loading && chars.length === 0) && <p>Nenhum personagem. Crie um novo.</p>}
-    </main>
-  );
-}
