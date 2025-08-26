@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { logout } from "@/lib/auth";
 
 export default function Nav() {
   const pathname = usePathname();
@@ -38,11 +39,6 @@ export default function Nav() {
       window.removeEventListener("resize", updateArrows);
     };
   }, [pathname]);
-
-  async function logout() {
-    await supabase.auth.signOut();
-    location.href = "/login";
-  }
 
   const links: [string, string][] = [
     ["/", "Início"],
