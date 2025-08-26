@@ -5,21 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AuthGuard from "@/app/components/AuthGuard";
 import { createBrowserClient } from "@supabase/ssr";
 import { usePathname } from "next/navigation"; // <-- ADICIONADO
-
-type Character = {
-  id: string;
-  name: string;
-  surname: string;
-  level: number;
-  xp: number;
-  str: number;
-  dex: number;
-  intt: number;
-  wis: number;
-  cha: number;
-  con: number;
-  luck: number;
-};
+import type { Character } from "@/types/character";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
