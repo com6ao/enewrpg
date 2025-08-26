@@ -1,5 +1,6 @@
 "use client";
 import { useCharacterList } from "../useCharacterList";
+import type { Character } from "@/types/character";
 
 export default function SelectCharacterPage() {
   const { chars, activeId, loading, setChars, setActiveId } = useCharacterList();
