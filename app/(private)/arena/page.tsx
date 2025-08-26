@@ -61,12 +61,27 @@ export default function ArenaPage() {
     | { kind: "buff"; id: "foco" | "fortalecer" | "enfraquecer" };
   const pendingCmd = useRef<Cmd | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   useEffect(
     () => () => {
-      if (timer.current) clearTimeout(timer.current);
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
     },
     []
   );
+
+  useEffect(() => {
+    if (auto) {
+      if (arenaId && !ended) loop(arenaId);
+    } else {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    }
+  }, [auto, arenaId, ended]);
 
   async function stepOnce(id: string) {
     const cmd = pendingCmd.current;
@@ -81,7 +96,10 @@ export default function ArenaPage() {
     }
   }
   async function loop(id: string) {
-    if (timer.current) clearTimeout(timer.current);
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
     if (!auto && !pendingCmd.current) {
       timer.current = setTimeout(() => loop(id), 120);
       return;
