@@ -1,31 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
-
-type Character = {
-  id: string;
-  name: string;
-  surname: string;
-  universe: string;
-  energy: string;
-  lvl: number;
-  xp: number;
-};
+import { useCharacterList } from "../useCharacterList";
 
 export default function SelectCharacterPage() {
-  const [chars, setChars] = useState<Character[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      const r = await fetch("/api/characters/list");
-      const data = await r.json();
-      setChars(data.characters ?? []);
-      setActiveId(data.active_character_id ?? null);
-      setLoading(false);
-    }
-    load();
-  }, []);
+  const { chars, activeId, loading, setChars, setActiveId } = useCharacterList();
 
   async function selectCharacter(id: string) {
     const r = await fetch("/api/characters/select", {
