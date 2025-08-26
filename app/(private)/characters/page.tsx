@@ -1,88 +1,74 @@
 "use client";
-
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import useCharacterList from "./useCharacterList";
 
 type Character = {
   id: string;
-  name?: string | null;
-  surname?: string | null;
-  universe?: string | null;
-  energy?: number | null;
-  lvl?: number | null;
-  xp?: number | null;
+  name: string;
+  surname: string;
+  universe: string;
+  energy: string;
+  lvl: number;
+  xp: number;
+};
+
+type ResponseData = {
+  characters: Character[];
+  active_character_id: string | null;
 };
 
 export default function CharactersIndex() {
-  const { chars, activeId, loading } = useCharacterList();
-  const [list, setList] = useState<Character[]>([]);
+  const [chars, setChars] = useState<Character[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setList(chars ?? []);
-  }, [chars]);
+    async function load() {
+      const r = await fetch("/api/characters/list");
+      if (!r.ok) return;
+      const data: ResponseData = await r.json();
+      setChars(data.characters ?? []);
+      setActiveId(data.active_character_id ?? null);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   return (
     <main className="container">
-      <header className="py-4 flex items-center justify-between">
-        <h1>Criar/Selecionar Personagem</h1>
-        <Link className="btn" href="/app/(private)/characters/select">
-          Selecionar
-        </Link>
-      </header>
+      <h1>Criar/Selecionar Personagem</h1>
 
-      {loading ? (
-        <p>Carregando…</p>
-      ) : list.length === 0 ? (
-      ) : chars.length === 0 ? (
-        <section className="card p-4">
-          <h2 className="card-title">Nenhum personagem</h2>
-          <p>Crie um personagem para começar.</p>
-          <div className="mt-3">
-            <Link className="btn" href="/app/(private)/characters/select">
-              Criar/Selecionar
-            </Link>
-          </div>
-        </section>
-      ) : (
-        <section className="grid gap-3">
-          {list.map((c) => (
-            <div key={c.id} className="card p-4">
-          {chars.map((c) => (
-            <div key={c.id} className="card">
-              <div className="card-title flex items-center gap-2">
-                <span>{c.name ?? "Sem nome"}</span>
-                {activeId === c.id && (
-                  <span className="badge">Ativo</span>
-                )}
-                {activeId === c.id && <span className="badge">Ativo</span>}
-              </div>
-              <div className="mt-2 text-sm opacity-80">
-              <div className="card-body text-sm opacity-80">
-                <div>Nível: {c.lvl ?? 1}</div>
-                <div>XP: {c.xp ?? 0}</div>
-                <div>Energia: {c.energy ?? 0}</div>
-              </div>
-              <div className="mt-3">
-                <Link
-                  className="btn"
-                  href={`/app/(private)/characters/select?focus=${c.id}`}
-                >
-                  Gerenciar
-                </Link>
-                <div className="mt-3">
-                  <Link
-                    className="btn"
-                    href={`/app/(private)/characters/select?focus=${c.id}`}
-                  >
-                    Gerenciar
-                  </Link>
+      <div className="card" style={{ display: "flex", gap: 12 }}>
+        <Link className="btn" href="/characters/new">Criar</Link>
+        <Link className="btn" href="/characters/select">Selecionar</Link>
+      </div>
+
+      {loading ? <p>carregando...</p> :
+        <div style={{ marginTop: 24 }}>
+          {chars.map((c) => {
+            const isActive = c.id === activeId;
+            return (
+              <div
+                key={c.id}
+                className="card"
+                style={{
+                  marginBottom: 12,
+                  border: isActive ? "2px solid #2ecc71" : undefined,
+                  background: isActive ? "#f1fff4" : undefined
+                }}
+              >
+                <div className="card-title">
+                  {c.name} {c.surname}
+                  {isActive && <span style={{ color: "#2ecc71", marginLeft: 6 }}>(Ativo)</span>}
+                </div>
+                <div className="muted">
+                  {c.universe} · {c.energy} · Lv {c.lvl} · XP {c.xp}
                 </div>
               </div>
-            </div>
-          ))}
-        </section>
-      )}
+            );
+          })}
+        </div>
+      }
     </main>
   );
 }
