@@ -70,7 +70,14 @@ export default function PrivateLayout({ children }: { children: React.ReactNode 
   // --- Poder de Combate (PC) ---
   function computePC(c: Character | null) {
     if (!c) return 0;
-    const sum = c.str + c.dex + c.intt + c.wis + c.cha + c.con + c.luck;
+   const sum =
+      (c.str ?? 0) +
+      (c.dex ?? 0) +
+      (c.intt ?? 0) +
+      (c.wis ?? 0) +
+      (c.cha ?? 0) +
+      (c.con ?? 0) +
+      (c.luck ?? 0);
     return sum * Math.max(1, c.level);
   }
 
