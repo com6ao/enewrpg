@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
+import { logout } from "@/lib/auth";
 import type { Character } from "@/types/character";
 
 const supabase = createBrowserClient(
@@ -58,11 +59,6 @@ export default function DashboardPage() {
       setLoading(false);
     })();
   }, [router]);
-
-  async function logout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-  }
 
   if (loading) {
     return (
