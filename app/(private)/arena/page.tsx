@@ -73,14 +73,11 @@ export default function ArenaPage() {
   );
 
   useEffect(() => {
-    if (auto) {
-      if (arenaId && !ended) loop(arenaId);
-    } else {
-      if (timer.current) {
-        clearTimeout(timer.current);
-        timer.current = null;
-      }
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
     }
+    if (auto && arenaId && !ended) loop(arenaId);
   }, [auto, arenaId, ended]);
 
   async function stepOnce(id: string) {
@@ -101,18 +98,13 @@ export default function ArenaPage() {
       clearTimeout(timer.current);
       timer.current = null;
     }
-    if (!auto && !pendingCmd.current) {
-      timer.current = setTimeout(() => loop(id), 120);
-      return;
-    }
+    if (!auto && !pendingCmd.current) return;
     const res = await stepOnce(id);
     if (!res) return;
     if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
     if (res.status === "finished") {
       setEnded(res.winner);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
       return;
     }
     timer.current = setTimeout(() => loop(id), 450);
@@ -140,6 +132,7 @@ export default function ArenaPage() {
   }
   const queue = (c: Cmd) => {
     pendingCmd.current = c;
+  if (!auto && arenaId && !timer.current && !loadingStep) loop(arenaId);
   };
 
   useEffect(() => {
