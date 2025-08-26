@@ -6,14 +6,10 @@ import {
   meleeAttack,
   rangedAttack,
   magicAttack,
-  mentalAttack,
-  resistPhysicalMelee,
-  resistPhysicalRanged,
-  resistMagic,
-  resistMental,
-  clamp,
-  dodgeChance,
-  accuracyPercent,
+ resistByKind,
+  bestBasic,
+  estimateDamage,
+  accuracyFinal,
 } from "@/lib/formulas";
 
 /* ===== tipos visíveis na UI ===== */
@@ -30,22 +26,6 @@ type Snap = {
 type StartResp = { id: string; snap: Snap };
 type StepResp = { id: string; snap: Snap; lines: Log[]; status: "active" | "finished"; winner: null | "player" | "enemy" | "draw"; cursor: number };
 
-/* ===== helpers da UI (sem duplicar fórmulas do motor) ===== */
-const accuracyFinal = (att: { level: number }, def: { level: number; attrs: Attrs }) =>
-  clamp(accuracyPercent(att.level, def.level) - dodgeChance(def.attrs), 5, 100);
-
-const resistByKind = (def: Attrs, k: "melee" | "magic" | "ranged" | "mental") =>
-  k === "melee" ? resistPhysicalMelee(def) : k === "magic" ? resistMagic(def) : k === "ranged" ? resistPhysicalRanged(def) : resistMental(def);
-
-const estimateDamage = (base: number, res: number) => Math.max(1, base - Math.floor(res * 0.35));
-
-const bestBasic = (a: Attrs) =>
-  [
-    { base: meleeAttack(a), kind: "melee" as const },
-    { base: magicAttack(a), kind: "magic" as const },
-    { base: rangedAttack(a), kind: "ranged" as const },
-    { base: mentalAttack(a), kind: "mental" as const },
-  ].sort((x, y) => y.base - x.base)[0];
 
 /* UI base compacta */
 const card: React.CSSProperties = { background: "#0b0b0b", border: "1px solid #1e1e1e", borderRadius: 10, padding: 8 };
@@ -164,8 +144,8 @@ export default function ArenaPage() {
     prevHpRef.current = cur;
   }, [snap?.player.hp, snap?.enemy.hp]);
 
-  const accPlayer = snap ? accuracyFinal({ level: snap.player.level }, { level: snap.enemy.level, attrs: snap.srv.enemy.attrs }) : null;
-  const accEnemy = snap ? accuracyFinal({ level: snap.enemy.level }, { level: snap.player.level, attrs: snap.srv.player.attrs }) : null;
+  const accPlayer = snap ? accuracyFinal(snap.player.level, snap.enemy.level, snap.srv.enemy.attrs) : null;
+  const accEnemy = snap ? accuracyFinal(snap.enemy.level, snap.player.level, snap.srv.player.attrs) : null;
 
   function decorate(text: string, side: "neutral" | "player" | "enemy") {
     let t = text
