@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCharacterList } from "./useCharacterList";
+import type { Character } from "@/types/character";
 
 export default function CharactersIndex() {
  const { chars, activeId, loading } = useCharacterList();
