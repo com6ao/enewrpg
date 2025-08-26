@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import InventoryPanel from "@/app/components/InventoryPanel";
+import ProgressBar from "@/app/components/ProgressBar";
 import type { Attr as Attrs } from "@/lib/formulas";
 import {
   meleeAttack,
@@ -395,7 +396,7 @@ export default function ArenaPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <strong style={{ fontSize: 12 }}>Seus atributos</strong>
                 <div style={{ width: 90 }}>
-                  <Bar value={0} color="#29b6f6" />
+                  <ProgressBar value={0} color="#29b6f6" />
                 </div>
               </div>
               <AttrGrid a={snap.srv.player.attrs} b={snap.srv.enemy.attrs} level={snap.player.level} accShown={accPlayer} />
@@ -477,19 +478,11 @@ function FighterCard({ you = false, snap, slash }: { you?: boolean; snap: Snap; 
       <div style={{ fontSize: 10, opacity: 0.85, marginBottom: 3, paddingLeft: 50 }}>
         HP {unit.hp}/{unit.hpMax}
       </div>
-      <Bar value={(unit.hp / unit.hpMax) * 100} color="#2ecc71" />
+      <ProgressBar value={(unit.hp / unit.hpMax) * 100} color="#2ecc71" />
       <div style={{ fontSize: 10, opacity: 0.85, margin: "6px 0 3px", paddingLeft: 50 }}>
         MP {unit.mp}/{unit.mpMax}
       </div>
-      <Bar value={(unit.mp / unit.mpMax) * 100} color="#8a63d2" />
-    </div>
-  );
-}
-function Bar({ value, color = "#2ecc71" }: { value: number; color?: string }) {
-  const w = Math.max(0, Math.min(100, Math.round(value)));
-  return (
-    <div style={{ height: 8, background: "#222", borderRadius: 6, overflow: "hidden" }}>
-      <div style={{ width: `${w}%`, height: "100%", background: color, transition: "width 140ms linear" }} />
+      <ProgressBar value={(unit.mp / unit.mpMax) * 100} color="#8a63d2" />
     </div>
   );
 }
