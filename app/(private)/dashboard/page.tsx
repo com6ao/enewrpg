@@ -3,12 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
-
-type Character = {
-  id: string; name: string; surname: string;
-  level: number; xp: number;
-  str: number; dex: number; intt: number; wis: number; cha: number; con: number; luck: number;
-};
+import type { Character } from "@/types/character";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
