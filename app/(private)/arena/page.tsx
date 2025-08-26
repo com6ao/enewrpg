@@ -44,6 +44,36 @@ export default function ArenaPage() {
   const [progMin, setProgMin] = useState(false);
   const [bagOpen, setBagOpen] = useState(false);
 
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const aid = localStorage.getItem("arena:arenaId");
+    const snapStr = localStorage.getItem("arena:snap");
+    const logsStr = localStorage.getItem("arena:logs");
+    const autoStr = localStorage.getItem("arena:auto");
+    if (autoStr !== null) setAuto(autoStr === "true");
+    if (aid && snapStr && logsStr) {
+      try {
+        setArenaId(aid);
+        setSnap(JSON.parse(snapStr));
+        setLogs(JSON.parse(logsStr));
+        restoredRef.current = true;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (restoredRef.current && arenaId && !ended) {
+      restoredRef.current = false;
+      loop(arenaId);
+    }
+  }, [arenaId, ended, auto]);
+
+
+
   useEffect(() => {
     document.body.classList.add("arena-page");
     return () => document.body.classList.remove("arena-page");
@@ -141,6 +171,40 @@ export default function ArenaPage() {
   useEffect(() => {
     if (calcRef.current) calcRef.current.scrollTop = calcRef.current.scrollHeight;
   }, [showCalc, snap?.calc]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (arenaId) localStorage.setItem("arena:arenaId", arenaId);
+    else {
+      localStorage.removeItem("arena:arenaId");
+    }
+  }, [arenaId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (snap) localStorage.setItem("arena:snap", JSON.stringify(snap));
+    else localStorage.removeItem("arena:snap");
+  }, [snap]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (logs.length) localStorage.setItem("arena:logs", JSON.stringify(logs));
+    else localStorage.removeItem("arena:logs");
+  }, [logs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("arena:auto", String(auto));
+  }, [auto]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (ended) {
+      localStorage.removeItem("arena:arenaId");
+      localStorage.removeItem("arena:snap");
+      localStorage.removeItem("arena:logs");
+      localStorage.removeItem("arena:auto");
+    }
+  }, [ended]);
 
   useEffect(() => {
     if (!snap) return;
