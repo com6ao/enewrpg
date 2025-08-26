@@ -116,7 +116,16 @@ export default function ArenaPage() {
     setLoadingStep(true);
     try {
       const r = await fetch("/api/arena", { method: "POST", body: JSON.stringify({ op: "step", id, cmd }) });
-      if (!r.ok) return null;
+      if (!r.ok) {
+        setArenaId(null);
+        setSnap(null);
+        setLogs([]);
+        if (typeof window !== "undefined") {
+          for (const k of Object.keys(localStorage)) if (k.startsWith("arena:")) localStorage.removeItem(k);
+          alert("Sessão expirada. Inicie uma nova batalha.");
+        }
+        return null;
+      }
       return (await r.json()) as StepResp;
     } finally {
       setLoadingStep(false);
