@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 
 export type Character = {
   id: string;
@@ -22,11 +23,18 @@ export function useCharacterList() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const r = await fetch("/api/characters/list");
-    if (!r.ok) { setLoading(false); return; }
-    const data: ResponseData = await r.json();
-    setChars(data.characters ?? []);
-    setActiveId(data.active_character_id ?? null);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) { setLoading(false); return; }
+    const r = await fetch("/api/characters/list", { credentials: "include" });
+    if (r.ok) {
+      const data: ResponseData = await r.json();
+      setChars(data.characters ?? []);
+      setActiveId(data.active_character_id ?? null);
+    } else if (r.status === 401) {
+      window.location.href = "/login";
+    }
     setLoading(false);
   }, []);
 
