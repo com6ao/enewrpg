@@ -36,3 +36,33 @@ export const dodgeChance = (a:Attr)=>clamp(Math.floor(a.dex*0.3),0,55);
 export const accuracyPercent = (atkLv:number,defLv:number)=>{
   let acc=100; if(defLv>atkLv) acc-=(defLv-atkLv)*10; return clamp(acc,30,100);
 };
+
+// shared helpers
+export type DmgKind = "melee"|"magic"|"ranged"|"mental";
+export const resistByKind = (a:Attr,k:DmgKind)=>
+  k==="melee"?resistPhysicalMelee(a):
+  k==="ranged"?resistPhysicalRanged(a):
+  k==="magic"?resistMagic(a):
+  resistMental(a);
+
+export const bestBasic = (a:Attr)=>
+  [
+    { base: meleeAttack(a), kind: "melee" as DmgKind },
+    { base: magicAttack(a), kind: "magic" as DmgKind },
+    { base: rangedAttack(a), kind: "ranged" as DmgKind },
+    { base: mentalAttack(a), kind: "mental" as DmgKind },
+  ].sort((x,y)=>y.base-x.base)[0];
+
+export const estimateDamage = (base:number,res:number)=>
+  Math.max(1, base - Math.floor(res*0.35));
+
+export const accuracyFinal = (
+  attLevel:number,
+  defLevel:number,
+  defAttrs:Attr,
+  accBonus=0
+) => {
+  const acc = accuracyPercent(attLevel, defLevel) + accBonus;
+  const dodge = dodgeChance(defAttrs);
+  return clamp(acc - dodge, 5, 100);
+};
