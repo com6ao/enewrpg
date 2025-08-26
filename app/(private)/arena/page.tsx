@@ -96,6 +96,7 @@ export default function ArenaPage() {
     }
   }
   async function loop(id: string) {
+    if (ended) return;
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
@@ -110,7 +111,8 @@ export default function ArenaPage() {
     setSnap(res.snap);
     if (res.status === "finished") {
       setEnded(res.winner);
-      if (auto) timer.current = setTimeout(() => loop(id), 450);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
       return;
     }
     timer.current = setTimeout(() => loop(id), 450);
