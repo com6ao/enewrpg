@@ -5,10 +5,11 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { rollLoot } from "@/lib/loot";
 import { getSupabaseServer } from "@/lib/supabaseServer";
+import { sql } from "@supabase/supabase-js";
 
 type Attr = { str: number; dex: number; intt: number; wis: number; con: number; cha: number; luck: number };
 
-async function getPlayerFromDashboard(): Promise<{ name: string; level: number; attrs: Attr }> {
+async function getPlayerFromDashboard(): Promise<{ name: string; level: number; attrs: Attr; gold: number }> {
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +34,7 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
 
   const { data, error } = await supabase
     .from("characters")
-    .select("name, level, str, dex, intt, wis, con, cha, luck")
+    .select("name, level, gold, str, dex, intt, wis, con, cha, luck")
     .eq("user_id", user.id)
     .single();
 
@@ -49,7 +50,7 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
     luck: data.luck ?? 10,
   };
 
-  return { name: data.name ?? "Você", level: data.level ?? 1, attrs };
+  return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0 };
 }
 
 type Row = {
@@ -69,16 +70,19 @@ export async function POST(req: Request) {
 
   if (op === "start") {
     let snap: PublicSnapshot;
+    let gold = 0;
     try {
       const player = await getPlayerFromDashboard();
-      snap = startCombat(player);
+       gold = player.gold;
+      const { gold: _g, ...rest } = player;
+      snap = startCombat(rest);
     } catch {
       snap = startCombat();
     }
 
     const id = crypto.randomUUID();
     mem.battles[id] = { srv: snap.srv, cursor: 0, status: "active", winner: null };
-    return NextResponse.json({ id, snap });
+    return NextResponse.json({ id, snap, gold });
   }
 
   const id = body?.id as string | undefined;
@@ -96,6 +100,7 @@ export async function POST(req: Request) {
   row.cursor = snap.log.length;
 
   let drops: any[] = [];
+  let gold: number | null = null;
   if (snap.player.hp <= 0 || snap.enemy.hp <= 0) {
     row.status = "finished";
     row.winner = snap.player.hp > 0 ? "player" : snap.enemy.hp > 0 ? "enemy" : "draw";
@@ -108,6 +113,14 @@ export async function POST(req: Request) {
           for (const item of drops) {
             await supabase.from("gear_items").insert({ owner_user: user.id, ...item });
           }
+          // aplica ouro ao personagem ativo
+          const { data: char } = await supabase
+            .from("characters")
+            .update({ gold: sql`gold + ${snap.srv.gold}` })
+            .eq("user_id", user.id)
+            .select("gold")
+            .single();
+          gold = char?.gold ?? null;
         }
       } catch {
         drops = [];
@@ -122,6 +135,6 @@ export async function POST(req: Request) {
     status: row.status,
     winner: row.winner ?? null,
     cursor: row.cursor,
-    rewards: { gold: snap.srv.gold, xp: 0, drops },
+    rewards: { gold, xp: 0, drops },
   });
 }
