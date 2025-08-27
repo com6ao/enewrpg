@@ -68,3 +68,9 @@ export const generateItem = (rng:()=>number=Math.random):GearItem => {
   const score = computeGearScore({slot,rarity,base,substats});
   return { slot, rarity, base, substats, score };
 };
+
+export const rollLoot = (
+  count = 1,
+  rng: () => number = Math.random
+): GearItem[] =>
+  Array.from({ length: count }, () => generateItem(rng));
