@@ -21,6 +21,7 @@ create type gear_rarity as enum ('common','uncommon','rare','epic','legendary');
 create table gear_items (
   id uuid primary key default gen_random_uuid(),
   owner_user uuid references auth.users(id) on delete cascade,
+  character_id uuid references characters(id),
   slot gear_slot not null,
   rarity gear_rarity not null,
   base jsonb not null,
@@ -53,6 +54,7 @@ create policy "Users manage equipped gear" on gear_equipped for all using (
 
 -- Helpful indexes
 create index gear_items_owner_idx on gear_items(owner_user);
+create index gear_items_character_idx on gear_items(character_id);
 create index gear_items_slot_idx on gear_items(slot);
 create index gear_items_rarity_idx on gear_items(rarity);
 create index gear_equipped_character_idx on gear_equipped(character_id);
