@@ -32,7 +32,7 @@ type StepResp = {
   status: "active" | "finished";
   winner: null | "player" | "enemy" | "draw";
   cursor: number;
-  rewards: { gold: number | null; xp: number; drops: any[] };
+  rewards: { gold: number; goldDelta: number; xp: number; drops: any[] };
 };
 
 
@@ -153,7 +153,15 @@ export default function ArenaPage() {
     if (!res) return;
     if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
-    if (res.rewards?.gold !== null && res.rewards?.gold !== undefined) setGold(res.rewards.gold);
+    if (res.rewards) {
+      if (typeof res.rewards.goldDelta === "number" && !Number.isNaN(res.rewards.goldDelta)) {
+        setGold((g) => g + res.rewards.goldDelta);
+      } else if (typeof res.rewards.gold === "number") {
+        setGold(res.rewards.gold);
+      } else if (typeof res.snap?.srv?.gold === "number") {
+        setGold(res.snap.srv.gold);
+      }
+    }
     if (res.status === "finished") {
       setEnded(res.winner);
       return;
