@@ -96,28 +96,22 @@ export async function POST(req: Request) {
   const prevGold = row.srv.gold;
   row.srv = snap.srv;
   const deltaGold = snap.srv.gold - prevGold;
-
-  let gold: number | null = null;
+  const newGold = prevGold + deltaGold;
+  
   if (deltaGold > 0) {
     try {
       const supabase = await getSupabaseServer();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: char, error: charErr } = await supabase
+        const { error: updErr } = await supabase
           .from("characters")
-          .select("gold")
-          .eq("user_id", user.id)
-          .single();
-        if (!charErr && char) {
-          const newGold = (char.gold ?? 0) + deltaGold;
-          const { error: updErr } = await supabase
-            .from("characters")
-            .update({ gold: newGold })
-            .eq("user_id", user.id);
-          if (!updErr) gold = newGold;
-        }
+          .update({ gold: newGold })
+          .eq("user_id", user.id);
+        if (updErr) console.error("failed to update gold", updErr);
       }
-    } catch {}
+    } catch (err) {
+      console.error("failed to update gold", err);
+    }
   }
 
   const newLogs = snap.log.slice(row.cursor);
@@ -152,6 +146,6 @@ export async function POST(req: Request) {
     status: row.status,
     winner: row.winner ?? null,
     cursor: row.cursor,
-    rewards: { gold, xp: 0, drops },
+    rewards: { gold: newGold, goldDelta: deltaGold, xp: 0, drops },
   });
 }
