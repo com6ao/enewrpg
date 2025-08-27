@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { startCombat, stepCombat, type PublicSnapshot, type ClientCmd } from "@/lib/combat";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { rollLoot } from "@/lib/loot";
+import { getSupabaseServer } from "@/lib/supabaseServer";
 
 type Attr = { str: number; dex: number; intt: number; wis: number; con: number; cha: number; luck: number };
 
@@ -81,7 +83,7 @@ export async function POST(req: Request) {
 
   const id = body?.id as string | undefined;
   if (!id || !mem.battles[id]) {
-    return new NextResponse("id inválido", { status: 400 });
+    return NextResponse.json({ error: "id inválido" }, { status: 400 });
   }
 
   const row = mem.battles[id];
@@ -93,9 +95,24 @@ export async function POST(req: Request) {
   const newLogs = snap.log.slice(row.cursor);
   row.cursor = snap.log.length;
 
+  let drops: any[] = [];
   if (snap.player.hp <= 0 || snap.enemy.hp <= 0) {
     row.status = "finished";
     row.winner = snap.player.hp > 0 ? "player" : snap.enemy.hp > 0 ? "enemy" : "draw";
+    if (row.winner === "player") {
+      try {
+        const supabase = await getSupabaseServer();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          drops = rollLoot();
+          for (const item of drops) {
+            await supabase.from("gear_items").insert({ owner_user: user.id, ...item });
+          }
+        }
+      } catch {
+        drops = [];
+      }
+    }
   }
 
   return NextResponse.json({
@@ -105,5 +122,6 @@ export async function POST(req: Request) {
     status: row.status,
     winner: row.winner ?? null,
     cursor: row.cursor,
+    rewards: { gold: snap.srv.gold, xp: 0, drops },
   });
 }
