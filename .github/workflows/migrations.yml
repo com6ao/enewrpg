@@ -16,7 +16,7 @@ jobs:
           node-version: 20
 
       - name: Show migration status
-        run: npx supabase@latest migration status --db-url "${{ secrets.SUPABASE_DB_URL }}"
+        run: npx supabase@latest migration status --url "${{ secrets.SUPABASE_DB_URL }}"
 
       - name: Apply migrations
-        run: npx supabase@latest migration up --db-url "${{ secrets.SUPABASE_DB_URL }}"
+        run: npx supabase@latest migration up --url "${{ secrets.SUPABASE_DB_URL }}"
