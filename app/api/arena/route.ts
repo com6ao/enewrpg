@@ -111,7 +111,9 @@ export async function POST(req: Request) {
         if (user) {
           drops = rollLoot();
           for (const item of drops) {
-            await supabase.from("gear_items").insert({ owner_user: user.id, ...item });
+            await supabase
+              .from("gear_items")
+              .insert({ owner_user: user.id, character_id: null, ...item });
           }
           // aplica ouro ao personagem ativo
           const { data: char } = await supabase
