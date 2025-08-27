@@ -1,0 +1,15 @@
+name: Test Supabase Migration
+
+on:
+  workflow_dispatch:   # permite rodar manualmente pelo GitHub
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run migrations
+        run: npx supabase@latest migration status --db-url "${{ secrets.SUPABASE_DB_URL }}"
