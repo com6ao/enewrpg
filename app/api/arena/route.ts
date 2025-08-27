@@ -5,7 +5,6 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { rollLoot } from "@/lib/loot";
 import { getSupabaseServer } from "@/lib/supabaseServer";
-import { sql } from "@supabase/supabase-js";
 
 type Attr = { str: number; dex: number; intt: number; wis: number; con: number; cha: number; luck: number };
 
@@ -116,13 +115,21 @@ export async function POST(req: Request) {
               .insert({ owner_user: user.id, character_id: null, ...item });
           }
           // aplica ouro ao personagem ativo
-          const { data: char } = await supabase
+          const { data: char, error: charErr } = await supabase
             .from("characters")
-            .update({ gold: sql`gold + ${snap.srv.gold}` })
             .eq("user_id", user.id)
             .select("gold")
             .single();
-          gold = char?.gold ?? null;
+          if (charErr || !char) throw charErr;
+
+          const newGold = (char.gold ?? 0) + snap.srv.gold;
+          const { error: updErr } = await supabase
+            .from("characters")
+            .update({ gold: newGold })
+            .eq("user_id", user.id);
+          if (updErr) throw updErr;
+
+          gold = newGold;
         }
       } catch {
         drops = [];
