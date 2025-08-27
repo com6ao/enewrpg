@@ -109,11 +109,11 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           drops = rollLoot();
-          for (const item of drops) {
-            await supabase
-              .from("gear_items")
-              .insert({ owner_user: user.id, character_id: null, ...item });
-          }
+          const rows = drops.map(item => ({ owner_user: user.id, character_id: null, ...item }));
+          const { error: insertErr } = await supabase
+            .from("gear_items")
+            .insert(rows);
+          if (insertErr) throw insertErr;
           // aplica ouro ao personagem ativo
           const { data: char, error: charErr } = await supabase
             .from("characters")
