@@ -93,13 +93,37 @@ export async function POST(req: Request) {
   const cmd = (body?.cmd ?? undefined) as ClientCmd | undefined;
 
   const snap = stepCombat(row.srv, cmd);
+  const prevGold = row.srv.gold;
   row.srv = snap.srv;
+  const deltaGold = snap.srv.gold - prevGold;
+
+  let gold: number | null = null;
+  if (deltaGold > 0) {
+    try {
+      const supabase = await getSupabaseServer();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: char, error: charErr } = await supabase
+          .from("characters")
+          .select("gold")
+          .eq("user_id", user.id)
+          .single();
+        if (!charErr && char) {
+          const newGold = (char.gold ?? 0) + deltaGold;
+          const { error: updErr } = await supabase
+            .from("characters")
+            .update({ gold: newGold })
+            .eq("user_id", user.id);
+          if (!updErr) gold = newGold;
+        }
+      }
+    } catch {}
+  }
 
   const newLogs = snap.log.slice(row.cursor);
   row.cursor = snap.log.length;
 
   let drops: any[] = [];
-  let gold: number | null = null;
   if (snap.player.hp <= 0 || snap.enemy.hp <= 0) {
     row.status = "finished";
     row.winner = snap.player.hp > 0 ? "player" : snap.enemy.hp > 0 ? "enemy" : "draw";
@@ -114,22 +138,6 @@ export async function POST(req: Request) {
             .from("gear_items")
             .insert(rows);
           if (insertErr) throw insertErr;
-          // aplica ouro ao personagem ativo
-          const { data: char, error: charErr } = await supabase
-            .from("characters")
-            .select("gold")
-            .eq("user_id", user.id)
-            .single();
-          if (charErr || !char) throw charErr;
-
-          const newGold = (char.gold ?? 0) + snap.srv.gold;
-          const { error: updErr } = await supabase
-            .from("characters")
-            .update({ gold: newGold })
-            .eq("user_id", user.id);
-          if (updErr) throw updErr;
-
-          gold = newGold;
         }
       } catch {
         drops = [];
