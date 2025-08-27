@@ -117,8 +117,8 @@ export async function POST(req: Request) {
           // aplica ouro ao personagem ativo
           const { data: char, error: charErr } = await supabase
             .from("characters")
-            .eq("user_id", user.id)
             .select("gold")
+            .eq("user_id", user.id)
             .single();
           if (charErr || !char) throw charErr;
 
