@@ -7,7 +7,7 @@ import {
   meleeAttack,
   rangedAttack,
   magicAttack,
- resistByKind,
+  resistByKind,
   bestBasic,
   estimateDamage,
   accuracyFinal,
@@ -24,8 +24,16 @@ type Snap = {
   calc: Calc[];
   srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
 };
-type StartResp = { id: string; snap: Snap };
-type StepResp = { id: string; snap: Snap; lines: Log[]; status: "active" | "finished"; winner: null | "player" | "enemy" | "draw"; cursor: number };
+type StartResp = { id: string; snap: Snap; gold: number };
+type StepResp = {
+  id: string;
+  snap: Snap;
+  lines: Log[];
+  status: "active" | "finished";
+  winner: null | "player" | "enemy" | "draw";
+  cursor: number;
+  rewards: { gold: number | null; xp: number; drops: any[] };
+};
 
 
 /* UI base compacta */
@@ -43,6 +51,7 @@ export default function ArenaPage() {
   const [ended, setEnded] = useState<null | "player" | "enemy" | "draw">(null);
   const [progMin, setProgMin] = useState(false);
   const [bagOpen, setBagOpen] = useState(false);
+  const [gold, setGold] = useState(0);
 
   const restoredRef = useRef(false);
 
@@ -52,7 +61,9 @@ export default function ArenaPage() {
     const snapStr = localStorage.getItem("arena:snap");
     const logsStr = localStorage.getItem("arena:logs");
     const autoStr = localStorage.getItem("arena:auto");
+    const goldStr = localStorage.getItem("arena:gold");
     if (autoStr !== null) setAuto(autoStr === "true");
+    if (goldStr) setGold(parseInt(goldStr));
     if (aid && snapStr && logsStr) {
       try {
         setArenaId(aid);
@@ -142,6 +153,7 @@ export default function ArenaPage() {
     if (!res) return;
     if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
+    if (res.rewards?.gold !== null && res.rewards?.gold !== undefined) setGold(res.rewards.gold);
     if (res.status === "finished") {
       setEnded(res.winner);
       return;
@@ -164,6 +176,7 @@ export default function ArenaPage() {
       const data = (await r.json()) as StartResp;
       setArenaId(data.id);
       setSnap(data.snap);
+      setGold(data.gold ?? 0);
       if (typeof window !== "undefined") loop(data.id);
     } finally {
       setBusy(false);
@@ -199,6 +212,11 @@ export default function ArenaPage() {
     if (logs.length) localStorage.setItem("arena:logs", JSON.stringify(logs));
     else localStorage.removeItem("arena:logs");
   }, [logs]);
+  
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("arena:gold", gold.toString());
+  }, [gold]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -249,7 +267,6 @@ export default function ArenaPage() {
   }
 
   const stage = snap?.srv?.stage ?? 1;
-  const gold = snap?.srv?.gold ?? 0;
   const lastStage = Math.max(stage + 4, 7);
 
   const turnTrail = useMemo(() => {
