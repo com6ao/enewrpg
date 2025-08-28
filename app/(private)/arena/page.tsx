@@ -22,7 +22,7 @@ type Snap = {
   enemy: UnitPub;
   log: Log[];
   calc: Calc[];
-  srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
+  srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number; xp: number };
   enemyDefeated?: boolean;
 };
 type StartResp = { id: string; snap: Snap; gold: number };
@@ -33,7 +33,7 @@ type StepResp = {
   status: "active" | "finished";
   winner: null | "player" | "enemy" | "draw";
   cursor: number;
-  rewards: { gold: number; goldDelta: number; xp: number; drops: any[] };
+  rewards: { gold: number; goldDelta: number; xp: number; level: number; drops: any[] };
 };
 
 
@@ -184,6 +184,7 @@ export default function ArenaPage() {
     if (!auto && !pendingCmd.current) return;
     const res = await stepOnce(id);
     if (!res) return;
+    const prevLevel = snap?.player.level ?? 0;
     if (res.lines?.length) setLogs((p) => [...p, ...res.lines]);
     setSnap(res.snap);
     if (res.rewards) {
@@ -198,6 +199,13 @@ export default function ArenaPage() {
         setDrops((d) => [...d, ...res.rewards.drops]);
         const names = res.rewards.drops.map((it: any) => `${it.rarity} ${it.slot}`).join(", ");
         setLogs((p) => [...p, { side: "neutral", text: `Drops: ${names}` }]);
+      }
+      if (typeof res.rewards.xp === "number" && res.rewards.xp > 0) {
+        const msgs: Log[] = [{ side: "neutral", text: `Ganhou ${res.rewards.xp} XP` }];
+        if (res.rewards.level > prevLevel) {
+          msgs.push({ side: "neutral", text: `Subiu para o nível ${res.rewards.level}!` });
+        }
+        setLogs((p) => [...p, ...msgs]);
       }
     }
     if (res.status === "finished") {
