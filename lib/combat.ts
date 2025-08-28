@@ -128,13 +128,36 @@ function chooseAI(att:Unit,def:Unit):ClientCmd{
   return {kind:"basic"};
 }
 
+const enemyPools:string[][]=[
+  ["Rato Selvagem","Rato Gigante"],
+  ["Lobo Faminto","Lobo das Sombras"],
+  ["Goblin Batedor","Goblin Arqueiro"],
+  ["Orc Guerreiro","Orc Bruto"],
+  ["Troll das Cavernas","Troll da Montanha"],
+  ["Mago Negro","Bruxo Sombrio"],
+  ["Dragão Jovem","Dragão Rubro"],
+  ["Quimera","Quimera Alfa"],
+  ["Titã de Pedra","Titã de Ferro"],
+  ["Anjo Caído","Arcanjo Corrompido"],
+];
+
+const namePrefixes=["Ancião","Sombrio","Corrompido","Guardião","Bestial","Fantasmagórico"];
+const nameSuffixes=["do Abismo","das Sombras","da Ruína","Eterno","Supremo","do Caos"];
+
 function spawnEnemy(stage:number):Unit{
   const base=stage;
-  return buildUnit("enemy",
-    stage===1?"Rato Selvagem":stage===2?"Lobo Faminto":stage===3?"Goblin Batedor":`Elite ${stage}`,
+  let name:string;
+  const pool=enemyPools[stage-1];
+  if(pool){
+    name=pool[rnd(pool.length)];
+  }else{
+    name=`${namePrefixes[rnd(namePrefixes.length)]} ${nameSuffixes[rnd(nameSuffixes.length)]}`;
+  }
+  const bonus=Math.max(0,stage-enemyPools.length);
+  return buildUnit("enemy",name,
     base,{
-      str:8+stage, dex:7+Math.floor(stage*0.8), intt:6+Math.floor(stage*0.6),
-      wis:6+Math.floor(stage*0.5), con:7+stage, cha:6+Math.floor(stage*0.3), luck:6+Math.floor(stage*0.3)
+      str:8+stage+bonus, dex:7+Math.floor(stage*0.8)+bonus, intt:6+Math.floor(stage*0.6)+bonus,
+      wis:6+Math.floor(stage*0.5)+bonus, con:7+stage+bonus, cha:6+Math.floor(stage*0.3)+bonus, luck:6+Math.floor(stage*0.3)+bonus
     });
 }
 
