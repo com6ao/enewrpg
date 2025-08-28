@@ -23,6 +23,7 @@ type Snap = {
   log: Log[];
   calc: Calc[];
   srv: { player: { attrs: Attrs; level: number }; enemy: { attrs: Attrs; level: number }; stage: number; gold: number };
+  enemyDefeated?: boolean;
 };
 type StartResp = { id: string; snap: Snap; gold: number };
 type StepResp = {
@@ -52,6 +53,7 @@ export default function ArenaPage() {
   const [progMin, setProgMin] = useState(false);
   const [bagOpen, setBagOpen] = useState(false);
   const [gold, setGold] = useState(0);
+  const [drops, setDrops] = useState<any[]>([]);
 
   const restoredRef = useRef(false);
 
@@ -62,8 +64,16 @@ export default function ArenaPage() {
     const logsStr = localStorage.getItem("arena:logs");
     const autoStr = localStorage.getItem("arena:auto");
     const goldStr = localStorage.getItem("arena:gold");
+    const dropsStr = localStorage.getItem("arena:drops");
     if (autoStr !== null) setAuto(autoStr === "true");
     if (goldStr) setGold(parseInt(goldStr));
+    if (dropsStr) {
+      try {
+        setDrops(JSON.parse(dropsStr));
+      } catch (err) {
+        console.error(err);
+      }
+    }
     if (aid && snapStr && logsStr) {
       try {
         setArenaId(aid);
@@ -134,7 +144,7 @@ export default function ArenaPage() {
       });
       console.log("stepOnce:response", r.status);
       if (!r.ok) {
-        slet msg = "";
+        let msg = "";
         try {
           msg = await r.text();
         } catch (err) {
@@ -183,6 +193,11 @@ export default function ArenaPage() {
         setGold(res.rewards.gold);
       } else if (typeof res.snap?.srv?.gold === "number") {
         setGold(res.snap.srv.gold);
+      }
+      if (Array.isArray(res.rewards.drops) && res.rewards.drops.length) {
+        setDrops((d) => [...d, ...res.rewards.drops]);
+        const names = res.rewards.drops.map((it: any) => `${it.rarity} ${it.slot}`).join(", ");
+        setLogs((p) => [...p, { side: "neutral", text: `Drops: ${names}` }]);
       }
     }
     if (res.status === "finished") {
@@ -246,6 +261,12 @@ export default function ArenaPage() {
   
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (drops.length) localStorage.setItem("arena:drops", JSON.stringify(drops));
+    else localStorage.removeItem("arena:drops");
+  }, [drops]);
+  
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     localStorage.setItem("arena:gold", gold.toString());
   }, [gold]);
 
@@ -261,6 +282,7 @@ export default function ArenaPage() {
       localStorage.removeItem("arena:snap");
       localStorage.removeItem("arena:logs");
       localStorage.removeItem("arena:auto");
+      localStorage.removeItem("arena:drops");
     }
   }, [ended]);
 
