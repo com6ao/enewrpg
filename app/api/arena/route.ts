@@ -108,6 +108,7 @@ export async function POST(req: Request) {
 
   const prevGold = row.srv.gold;
   const snap = stepCombat(row.srv, cmd);
+  const enemyDefeated = snap.enemyDefeated;
   row.srv = snap.srv;
   const newGold = snap.srv.gold;
   const deltaGold = newGold - prevGold;
@@ -131,24 +132,25 @@ export async function POST(req: Request) {
   row.cursor = snap.log.length;
 
   let drops: any[] = [];
+  if (enemyDefeated) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        drops = rollLoot();
+        const rows = drops.map(item => ({ owner_user: user.id, character_id: null, ...item }));
+        const { error: insertErr } = await supabase
+          .from("gear_items")
+          .insert(rows);
+        if (insertErr) throw insertErr;
+      }
+    } catch {
+      drops = [];
+    }
+  }
+
   if (snap.player.hp <= 0 || snap.enemy.hp <= 0) {
     row.status = "finished";
     row.winner = snap.player.hp > 0 ? "player" : snap.enemy.hp > 0 ? "enemy" : "draw";
-    if (row.winner === "player") {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          drops = rollLoot();
-          const rows = drops.map(item => ({ owner_user: user.id, character_id: null, ...item }));
-          const { error: insertErr } = await supabase
-            .from("gear_items")
-            .insert(rows);
-          if (insertErr) throw insertErr;
-        }
-      } catch {
-        drops = [];
-      }
-    }
   }
   try {
     if (row.status === "finished") {
