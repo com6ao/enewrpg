@@ -125,19 +125,42 @@ export default function ArenaPage() {
     const cmd = pendingCmd.current;
     pendingCmd.current = null;
     setLoadingStep(true);
+    console.log("stepOnce:start", { id, cmd });
     try {
-      const r = await fetch("/api/arena", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "step", id, cmd }) });
+      const r = await fetch("/api/arena", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "step", id, cmd }),
+      });
+      console.log("stepOnce:response", r.status);
       if (!r.ok) {
-        setArenaId(null);
-        setSnap(null);
-        setLogs([]);
-        if (typeof window !== "undefined") {
-          for (const k of Object.keys(localStorage)) if (k.startsWith("arena:")) localStorage.removeItem(k);
-          alert("Sessão expirada. Inicie uma nova batalha.");
+        slet msg = "";
+        try {
+          msg = await r.text();
+        } catch (err) {
+          console.warn("stepOnce:failed to read error", err);
+        }
+        if (r.status === 401 || r.status === 403) {
+          alert(msg || "Sessão expirada. Inicie uma nova batalha.");
+          setArenaId(null);
+          setSnap(null);
+          setLogs([]);
+          if (typeof window !== "undefined") {
+            for (const k of Object.keys(localStorage))
+              if (k.startsWith("arena:")) localStorage.removeItem(k);
+          }
+        } else if (r.status >= 500) {
+          alert(msg || "Falha do servidor. Tente novamente mais tarde.");
+        } else {
+          alert(msg || "Erro ao processar ação.");
         }
         return null;
       }
       return (await r.json()) as StepResp;
+      } catch (err) {
+      console.error("stepOnce:network error", err);
+      alert("Erro de rede. Verifique sua conexão.");
+      return null;
     } finally {
       setLoadingStep(false);
     }
