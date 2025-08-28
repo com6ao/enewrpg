@@ -35,7 +35,7 @@ export type ClientCmd =
 export type PublicSnapshot = {
   player:{ id:"player"; name:string; level:number; hp:number; hpMax:number; mp:number; mpMax:number; atb:number; nextIcon?:string };
   enemy: { id:"enemy";  name:string; level:number; hp:number; hpMax:number; mp:number; mpMax:number; atb:number; nextIcon?:string };
-  log:Log[]; calc:Calc[]; srv:ServerState;
+  log:Log[]; calc:Calc[]; srv:ServerState; enemyDefeated?:boolean;
 };
 
 const copyPub = (u:Unit)=>
@@ -163,7 +163,7 @@ export function startCombat(
     stage: 1,
     gold: gold ?? 0,
   };
-  return { player: copyPub(player) as any, enemy: copyPub(enemy) as any, log: [], calc: [], srv };
+  return { player: copyPub(player) as any, enemy: copyPub(enemy) as any, log: [], calc: [], srv, enemyDefeated:false };
 }
 
 export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
@@ -196,7 +196,9 @@ export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
     gain(player); gain(enemy);
   }
 
+  let enemyDefeated=false;
   if(enemy.hp<=0 && player.hp>0){
+    enemyDefeated=true;
     const drop=3+Math.floor(Math.random()*5)+s.stage*2;
     s.gold+=drop;
     log.push({side:"neutral",text:`Você derrotou ${prev.enemy.name} e ganhou ${drop} ouro.`});
@@ -208,5 +210,5 @@ export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
     s.player.mp=clamp(s.player.mp+Math.floor(s.player.mpMax*0.03),0,s.player.mpMax);
   }
 
-  return { player:copyPub(s.player) as any, enemy:copyPub(s.enemy) as any, log, calc, srv:s };
+  return { player:copyPub(s.player) as any, enemy:copyPub(s.enemy) as any, log, calc, srv:s, enemyDefeated };
 }
