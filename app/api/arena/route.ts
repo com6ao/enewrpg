@@ -53,15 +53,12 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
 }
 
 type Row = {
+  id: string;
   srv: PublicSnapshot["srv"];
   cursor: number;
   status: "active" | "finished";
-  winner?: "player" | "enemy" | "draw" | null;
+  winner: "player" | "enemy" | "draw" | null;
 };
-
-const mem =
-  (globalThis as any).__ARENA__ ??
-  ((globalThis as any).__ARENA__ = { battles: {} as Record<string, Row> });
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as any;
@@ -78,16 +75,35 @@ export async function POST(req: Request) {
     }
 
     const id = crypto.randomUUID();
-    mem.battles[id] = { srv: snap.srv, cursor: 0, status: "active", winner: null };
+    try {
+      const supabase = await getSupabaseServer();
+      const { error: insertErr } = await supabase
+        .from("arena_sessions")
+        .insert({ id, srv: snap.srv, cursor: 0, status: "active", winner: null });
+      if (insertErr) throw insertErr;
+    } catch (err) {
+      console.error("failed to create arena session", err);
+      return NextResponse.json({ error: "failed to create session" }, { status: 500 });
+    }
     return NextResponse.json({ id, snap, gold: snap.srv.gold });
   }
 
   const id = body?.id as string | undefined;
-  if (!id || !mem.battles[id]) {
+  if (!id) {
     return NextResponse.json({ error: "id inválido" }, { status: 400 });
   }
 
-  const row = mem.battles[id];
+  const supabase = await getSupabaseServer();
+  const { data: rowData, error: rowErr } = await supabase
+    .from("arena_sessions")
+    .select("id, srv, cursor, status, winner")
+    .eq("id", id)
+    .single();
+  if (rowErr || !rowData) {
+    return NextResponse.json({ error: "id inválido" }, { status: 400 });
+  }
+
+  const row = rowData as Row;
   const cmd = (body?.cmd ?? undefined) as ClientCmd | undefined;
 
   const prevGold = row.srv.gold;
@@ -98,7 +114,6 @@ export async function POST(req: Request) {
   
   if (deltaGold > 0) {
     try {
-      const supabase = await getSupabaseServer();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { error: updErr } = await supabase
@@ -121,7 +136,6 @@ export async function POST(req: Request) {
     row.winner = snap.player.hp > 0 ? "player" : snap.enemy.hp > 0 ? "enemy" : "draw";
     if (row.winner === "player") {
       try {
-        const supabase = await getSupabaseServer();
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           drops = rollLoot();
@@ -135,6 +149,19 @@ export async function POST(req: Request) {
         drops = [];
       }
     }
+  }
+  try {
+    if (row.status === "finished") {
+      await supabase.from("arena_sessions").delete().eq("id", id);
+    } else {
+      const { error: updErr } = await supabase
+        .from("arena_sessions")
+        .update({ srv: row.srv, cursor: row.cursor, status: row.status, winner: row.winner })
+        .eq("id", id);
+      if (updErr) console.error("failed to update arena session", updErr);
+    }
+  } catch (err) {
+    console.error("failed to update arena session", err);
   }
 
   return NextResponse.json({
