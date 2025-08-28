@@ -21,7 +21,7 @@ export type Unit = {
 };
 
 export type ServerState = {
-  player:Unit; enemy:Unit; log:Log[]; calc:Calc[]; stage:number; gold:number;
+  player:Unit; enemy:Unit; log:Log[]; calc:Calc[]; stage:number; gold:number; xp:number;
 };
 
 type SkillId = "golpe_poderoso" | "explosao_arcana" | "tiro_preciso";
@@ -35,7 +35,7 @@ export type ClientCmd =
 export type PublicSnapshot = {
   player:{ id:"player"; name:string; level:number; hp:number; hpMax:number; mp:number; mpMax:number; atb:number; nextIcon?:string };
   enemy: { id:"enemy";  name:string; level:number; hp:number; hpMax:number; mp:number; mpMax:number; atb:number; nextIcon?:string };
-  log:Log[]; calc:Calc[]; srv:ServerState; enemyDefeated?:boolean;
+  log:Log[]; calc:Calc[]; srv:ServerState; enemyDefeated?:boolean; xpGain?:number; levelUp?:boolean;
 };
 
 const copyPub = (u:Unit)=>
@@ -138,8 +138,10 @@ function spawnEnemy(stage:number):Unit{
     });
 }
 
+function xpForNextLevel(level:number){ return level*100; }
+
 export function startCombat(
-  opts?: { name?: string; level?: number; attrs?: Partial<Attr> },
+  opts?: { name?: string; level?: number; xp?: number; attrs?: Partial<Attr> },
   gold?: number,
 ): PublicSnapshot {
   const pName = opts?.name ?? "Você";
@@ -162,6 +164,7 @@ export function startCombat(
     calc: [],
     stage: 1,
     gold: gold ?? 0,
+    xp: opts?.xp ?? 0,
   };
   return { player: copyPub(player) as any, enemy: copyPub(enemy) as any, log: [], calc: [], srv, enemyDefeated:false };
 }
@@ -197,11 +200,25 @@ export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
   }
 
   let enemyDefeated=false;
+  let xpGain=0;
+  let leveledUp=false;
   if(enemy.hp<=0 && player.hp>0){
     enemyDefeated=true;
     const drop=3+Math.floor(Math.random()*5)+s.stage*2;
     s.gold+=drop;
     log.push({side:"neutral",text:`Você derrotou ${prev.enemy.name} e ganhou ${drop} ouro.`});
+
+    xpGain = s.stage * 10;
+    if(xpGain>0){
+      s.xp += xpGain;
+      log.push({side:"neutral",text:`Você ganhou ${xpGain} XP.`});
+      while(s.xp >= xpForNextLevel(s.player.level)){
+        s.xp -= xpForNextLevel(s.player.level);
+        s.player.level += 1;
+        leveledUp=true;
+        log.push({side:"neutral",text:`Você subiu para o nível ${s.player.level}!`});
+      }
+    }
 
     s.stage+=1;
     s.enemy=spawnEnemy(s.stage);
@@ -210,5 +227,5 @@ export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
     s.player.mp=clamp(s.player.mp+Math.floor(s.player.mpMax*0.03),0,s.player.mpMax);
   }
 
-  return { player:copyPub(s.player) as any, enemy:copyPub(s.enemy) as any, log, calc, srv:s, enemyDefeated };
+  return { player:copyPub(s.player) as any, enemy:copyPub(s.enemy) as any, log, calc, srv:s, enemyDefeated, xpGain, levelUp:leveledUp };
 }
