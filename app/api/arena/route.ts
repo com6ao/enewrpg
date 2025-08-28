@@ -8,7 +8,7 @@ import { getSupabaseServer } from "@/lib/supabaseServer";
 
 type Attr = { str: number; dex: number; intt: number; wis: number; con: number; cha: number; luck: number };
 
-async function getPlayerFromDashboard(): Promise<{ name: string; level: number; attrs: Attr; gold: number }> {
+async function getPlayerFromDashboard(): Promise<{ name: string; level: number; attrs: Attr; gold: number; xp: number }> {
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +33,7 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
 
   const { data, error } = await supabase
     .from("characters")
-    .select("name, level, gold, str, dex, intt, wis, con, cha, luck")
+    .select("name, level, xp, gold, str, dex, intt, wis, con, cha, luck")
     .eq("user_id", user.id)
     .single();
 
@@ -49,7 +49,7 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
     luck: data.luck ?? 10,
   };
 
-  return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0 };
+  return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0, xp: data.xp ?? 0 };
 }
 
 type Row = {
@@ -107,24 +107,35 @@ export async function POST(req: Request) {
   const cmd = (body?.cmd ?? undefined) as ClientCmd | undefined;
 
   const prevGold = row.srv.gold;
+  const prevLevel = row.srv.player.level;
   const snap = stepCombat(row.srv, cmd);
   const enemyDefeated = snap.enemyDefeated;
   row.srv = snap.srv;
   const newGold = snap.srv.gold;
   const deltaGold = newGold - prevGold;
+  const xpGain = snap.xpGain ?? 0;
+  const newLevel = snap.srv.player.level;
   
-  if (deltaGold > 0) {
+  if (deltaGold > 0 || xpGain > 0 || newLevel !== prevLevel) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { error: updErr } = await supabase
-          .from("characters")
-          .update({ gold: newGold })
-          .eq("user_id", user.id);
-        if (updErr) console.error("failed to update gold", updErr);
+        const updates: Record<string, any> = {};
+        if (deltaGold > 0) updates.gold = newGold;
+        if (xpGain > 0 || newLevel !== prevLevel) {
+          updates.xp = snap.srv.xp;
+          updates.level = newLevel;
+        }
+        if (Object.keys(updates).length) {
+          const { error: updErr } = await supabase
+            .from("characters")
+            .update(updates)
+            .eq("user_id", user.id);
+          if (updErr) console.error("failed to update character", updErr);
+        }
       }
     } catch (err) {
-      console.error("failed to update gold", err);
+      console.error("failed to update character", err);
     }
   }
 
@@ -173,6 +184,6 @@ export async function POST(req: Request) {
     status: row.status,
     winner: row.winner ?? null,
     cursor: row.cursor,
-    rewards: { gold: newGold, goldDelta: deltaGold, xp: 0, drops },
+    rewards: { gold: newGold, goldDelta: deltaGold, xp: xpGain, level: newLevel, drops },
   });
 }
