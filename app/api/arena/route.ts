@@ -69,19 +69,17 @@ export async function POST(req: Request) {
 
   if (op === "start") {
     let snap: PublicSnapshot;
-    let gold = 0;
     try {
       const player = await getPlayerFromDashboard();
-       gold = player.gold;
-      const { gold: _g, ...rest } = player;
-      snap = startCombat(rest);
+       const { gold, ...rest } = player;
+      snap = startCombat(rest, gold);
     } catch {
       snap = startCombat();
     }
 
     const id = crypto.randomUUID();
     mem.battles[id] = { srv: snap.srv, cursor: 0, status: "active", winner: null };
-    return NextResponse.json({ id, snap, gold });
+    return NextResponse.json({ id, snap, gold: snap.srv.gold });
   }
 
   const id = body?.id as string | undefined;
@@ -92,11 +90,11 @@ export async function POST(req: Request) {
   const row = mem.battles[id];
   const cmd = (body?.cmd ?? undefined) as ClientCmd | undefined;
 
-  const snap = stepCombat(row.srv, cmd);
   const prevGold = row.srv.gold;
+  const snap = stepCombat(row.srv, cmd);
   row.srv = snap.srv;
-  const deltaGold = snap.srv.gold - prevGold;
-  const newGold = prevGold + deltaGold;
+  const newGold = snap.srv.gold;
+  const deltaGold = newGold - prevGold;
   
   if (deltaGold > 0) {
     try {
