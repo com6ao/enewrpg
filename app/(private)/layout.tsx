@@ -3,14 +3,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import AuthGuard from "@/app/components/AuthGuard";
-import { createBrowserClient } from "@supabase/ssr";
 import { usePathname } from "next/navigation"; // <-- ADICIONADO
 import type { Character } from "@/types/character";
+import { supabase } from "@/lib/supabase";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function PrivateLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();                         // <-- ADICIONADO
