@@ -138,13 +138,32 @@ function spawnEnemy(stage:number):Unit{
     });
 }
 
-export function startCombat(opts?:{name?:string;level?:number;attrs?:Partial<Attr>}):PublicSnapshot{
-  const pName=opts?.name??"Você"; const pLevel=opts?.level??1;
-  const pAttrs:Partial<Attr>=opts?.attrs ?? {str:12,dex:10,intt:10,wis:10,con:12,cha:10,luck:14};
-  const player=buildUnit("player",pName,pLevel,pAttrs);
-  const enemy=spawnEnemy(1);
-  const srv:ServerState={player,enemy,log:[],calc:[],stage:1,gold:0};
-  return { player:copyPub(player) as any, enemy:copyPub(enemy) as any, log:[], calc:[], srv };
+export function startCombat(
+  opts?: { name?: string; level?: number; attrs?: Partial<Attr> },
+  gold?: number,
+): PublicSnapshot {
+  const pName = opts?.name ?? "Você";
+  const pLevel = opts?.level ?? 1;
+  const pAttrs: Partial<Attr> = opts?.attrs ?? {
+    str: 12,
+    dex: 10,
+    intt: 10,
+    wis: 10,
+    con: 12,
+    cha: 10,
+    luck: 14,
+  };
+  const player = buildUnit("player", pName, pLevel, pAttrs);
+  const enemy = spawnEnemy(1);
+  const srv: ServerState = {
+    player,
+    enemy,
+    log: [],
+    calc: [],
+    stage: 1,
+    gold: gold ?? 0,
+  };
+  return { player: copyPub(player) as any, enemy: copyPub(enemy) as any, log: [], calc: [], srv };
 }
 
 export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
