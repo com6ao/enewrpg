@@ -1,13 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { createBrowserClient } from "@supabase/ssr";
+import { supabase } from "@/lib/supabase";
 import type { Character } from "@/types/character";
 import type { GearItem } from "@/types/gear";
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function InventoryPanel({ mode = "sidebar" }: { mode?: "sidebar" | "modal" }) {
   const [shopView, setShopView] = useState<null | "npc" | "market">(null);
