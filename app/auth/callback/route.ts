@@ -29,6 +29,10 @@ export async function GET(req: Request) {
 
   // troca o código pelo token e grava cookies
   const { error } = await supabase.auth.exchangeCodeForSession(code);
-  // opcional: trate erro -> redirecione para /login com mensagem
+  if (error) {
+    console.error("Error exchanging code for session", error);
+    const encodedMessage = encodeURIComponent(error.message);
+    return NextResponse.redirect(new URL(`/login?e=${encodedMessage}`, req.url));
+  }
   return NextResponse.redirect(new URL("/", req.url));
 }
