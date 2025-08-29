@@ -16,8 +16,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Link to Supabase
-        run: |
-          echo "${{ secrets.SUPABASE_DB_PASSWORD }}" | supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --debug
+        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "${{ secrets.SUPABASE_DB_PASSWORD }}" --debug
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
