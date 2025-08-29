@@ -1,10 +1,12 @@
+# .github/workflows/supabase-migrations.yml
 name: Supabase Migrations
-on: [push]
+on:
+  push:
+    branches: [ main ]
 
 jobs:
   migrate:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
 
@@ -12,28 +14,17 @@ jobs:
         with:
           version: latest
 
-      # opcional: valida se os secrets existem
-      - name: Sanity check secrets
-        run: |
-          [ -n "$SUPABASE_PROJECT_REF" ] || (echo "Missing SUPABASE_PROJECT_REF" && exit 1)
-          [ -n "$SUPABASE_ACCESS_TOKEN" ] || (echo "Missing SUPABASE_ACCESS_TOKEN" && exit 1)
-          [ -n "$SUPABASE_DB_PASSWORD" ] || (echo "Missing SUPABASE_DB_PASSWORD" && exit 1)
-        env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-
       - name: Check token access
         run: supabase projects list
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Link to Supabase
-        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "${{ secrets.SUPABASE_DB_PASSWORD }}" --debug
+        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --password "${{ secrets.SUPABASE_DB_PASSWORD }}" --debug
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Run migrations
+      - name: Run migrations (remote)
         run: supabase migration up --linked --debug
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
