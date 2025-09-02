@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main ]
 
+    - uses: actions/setup-node@v4
+  with:
+    node-version: '20'   # ou a versão de sua preferência
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
