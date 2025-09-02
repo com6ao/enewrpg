@@ -69,17 +69,14 @@ export async function POST(req: Request) {
     }
 
     const id = crypto.randomUUID();
-    try {
-      const supabase = await getSupabaseServer();
-      const { error: insertErr } = await supabase
-        .from("arena_sessions")
-        .insert({ id, srv: snap.srv, log_cursor: 0, status: "active", winner: null });
-      if (insertErr) throw insertErr;
-    } catch (err) {
-      console.error("failed to create arena session", err);
-      const message =
-        if (process.env.NODE_ENV !== "production" && err && typeof err === "object") {
-        const { message, details, code } = err as any;
+    const supabase = await getSupabaseServer();
+    const { error: insertErr } = await supabase
+      .from("arena_sessions")
+      .insert({ id, srv: snap.srv, log_cursor: 0, status: "active", winner: null });
+    if (insertErr) {
+      console.error("failed to create arena session", insertErr);
+      if (process.env.NODE_ENV !== "production" && typeof insertErr === "object") {
+        const { message, details, code } = insertErr as any;
         return NextResponse.json({ error: message, details, code }, { status: 500 });
       }
       return NextResponse.json({ error: "failed to create session" }, { status: 500 });
