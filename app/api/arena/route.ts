@@ -56,7 +56,7 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
 type Row = {
   id: string;
   srv: PublicSnapshot["srv"];
-  cursor: number;
+  log_cursor: number;
   status: "active" | "finished";
   winner: "player" | "enemy" | "draw" | null;
 };
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       const supabase = await getSupabaseServer();
       const { error: insertErr } = await supabase
         .from("arena_sessions")
-        .insert({ id, srv: snap.srv, cursor: 0, status: "active", winner: null });
+        .insert({ id, srv: snap.srv, log_cursor: 0, status: "active", winner: null });
       if (insertErr) throw insertErr;
     } catch (err) {
       console.error("failed to create arena session", err);
@@ -101,7 +101,7 @@ export async function POST(req: Request) {
   const supabase = await getSupabaseServer();
   const { data: rowData, error: rowErr } = await supabase
     .from("arena_sessions")
-    .select("id, srv, cursor, status, winner")
+    .select("id, srv, log_cursor, status, winner")
     .eq("id", id)
     .single();
   if (rowErr || !rowData) {
@@ -144,8 +144,8 @@ export async function POST(req: Request) {
     }
   }
 
-  const newLogs = snap.log.slice(row.cursor);
-  row.cursor = snap.log.length;
+  const newLogs = snap.log.slice(row.log_cursor);
+  row.log_cursor = snap.log.length;
 
   let drops: any[] = [];
   if (enemyDefeated) {
@@ -174,7 +174,7 @@ export async function POST(req: Request) {
     } else {
       const { error: updErr } = await supabase
         .from("arena_sessions")
-        .update({ srv: row.srv, cursor: row.cursor, status: row.status, winner: row.winner })
+        .update({ srv: row.srv, log_cursor: row.log_cursor, status: row.status, winner: row.winner })
         .eq("id", id);
       if (updErr) console.error("failed to update arena session", updErr);
     }
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
     lines: newLogs,
     status: row.status,
     winner: row.winner ?? null,
-    cursor: row.cursor,
+    log_cursor: row.log_cursor,
     rewards: { gold: newGold, goldDelta: deltaGold, xp: xpGain, level: newLevel, drops },
   });
 }
