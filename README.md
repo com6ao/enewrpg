@@ -9,9 +9,10 @@ Create a `.env` file in the project root and define the Supabase credentials:
 ```
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-These variables are required for Supabase to work.
+`SUPABASE_SERVICE_ROLE_KEY` is required for server-side operations like arena session persistence.
 
 First, run the development server:
 
