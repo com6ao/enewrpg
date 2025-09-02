@@ -50,7 +50,9 @@ export default function DashboardPage() {
         .eq("id", profile.active_character_id)
         .maybeSingle();
 
-      console.log("DASHBOARD CHARACTER:", personagem); // debug
+      if (process.env.NODE_ENV === "development") {
+        console.debug("DASHBOARD CHARACTER:", personagem);
+      }
       setChar(personagem as any);
       setLoading(false);
     })();
