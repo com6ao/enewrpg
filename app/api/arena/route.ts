@@ -50,7 +50,8 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
     luck: data.luck ?? 10,
   };
 
-  return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0, xp: data.xp ?? 0 };
+  const xp = typeof data.xp === "number" ? Math.trunc(data.xp) : parseInt(String(data.xp ?? 0), 10);
+  return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0, xp };
 }
 
 type Row = {
@@ -128,7 +129,7 @@ export async function POST(req: Request) {
         const updates: Record<string, any> = {};
         if (deltaGold > 0) updates.gold = newGold;
         if (xpGain > 0 || newLevel !== prevLevel) {
-          updates.xp = snap.srv.xp;
+          updates.xp = Math.trunc(Number(snap.srv.xp ?? 0));
           updates.level = newLevel;
         }
         if (Object.keys(updates).length) {
