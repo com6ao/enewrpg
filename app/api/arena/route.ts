@@ -78,10 +78,11 @@ export async function POST(req: Request) {
     } catch (err) {
       console.error("failed to create arena session", err);
       const message =
-        process.env.NODE_ENV === "development" && err instanceof Error
-          ? err.message
-          : "failed to create session";
-      return NextResponse.json({ error: message }, { status: 500 });
+        if (process.env.NODE_ENV !== "production" && err && typeof err === "object") {
+        const { message, details, code } = err as any;
+        return NextResponse.json({ error: message, details, code }, { status: 500 });
+      }
+      return NextResponse.json({ error: "failed to create session" }, { status: 500 });
     }
     return NextResponse.json({ id, snap, gold: snap.srv.gold });
   }
