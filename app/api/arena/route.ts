@@ -1,35 +1,24 @@
 // app/api/arena/route.ts
 import { NextResponse } from "next/server";
 import { startCombat, stepCombat, type PublicSnapshot, type ClientCmd } from "@/lib/combat";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { rollLoot } from "@/lib/loot";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
 type Attr = { str: number; dex: number; intt: number; wis: number; con: number; cha: number; luck: number };
 
-async function getPlayerFromDashboard(): Promise<{ name: string; level: number; attrs: Attr; gold: number; xp: number }> {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
-        },
-      },
-    }
-  );
+async function getPlayerFromDashboard(): Promise<{
+  name: string;
+  level: number;
+  attrs: Attr;
+  gold: number;
+  xp: number;
+}> {
+  const supabase = await getSupabaseServer();
 
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser();
   if (authErr || !user) throw new Error("Não autenticado");
 
   const { data, error } = await supabase
@@ -50,7 +39,10 @@ async function getPlayerFromDashboard(): Promise<{ name: string; level: number; 
     luck: data.luck ?? 10,
   };
 
-  const xp = typeof data.xp === "number" ? Math.trunc(data.xp) : parseInt(String(data.xp ?? 0), 10);
+  const xp =
+    typeof data.xp === "number"
+      ? Math.trunc(data.xp)
+      : parseInt(String(data.xp ?? 0), 10);
   return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0, xp };
 }
 
@@ -70,7 +62,7 @@ export async function POST(req: Request) {
     let snap: PublicSnapshot;
     try {
       const player = await getPlayerFromDashboard();
-       const { gold, ...rest } = player;
+      const { gold, ...rest } = player;
       snap = startCombat(rest, gold);
     } catch {
       snap = startCombat();
