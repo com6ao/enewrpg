@@ -1,33 +1,28 @@
-# .github/workflows/supabase-migrations.yml
 name: Supabase Migrations
 on:
   push:
-    branches: [ main ]
-
-    - uses: actions/setup-node@v4
-  with:
-    node-version: '20'   # ou a versão de sua preferência
+    branches:
+      - main
 
 jobs:
   migrate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-
       - name: Check token access
         run: supabase projects list
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
       - name: Link to Supabase
         run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --password "${{ secrets.SUPABASE_DB_PASSWORD }}" --debug
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
       - name: Run migrations
         run: supabase migration up --linked --debug
         env:
