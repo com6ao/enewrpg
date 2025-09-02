@@ -49,9 +49,9 @@ export default function InventoryPanel({ mode = "sidebar" }: { mode?: "sidebar" 
 
       const { data: recent } = await supabase
         .from("gear_items")
-        eq("owner_user", user.id)
-        .is("character_id", null)
         .select("*")
+        .eq("owner_user", user.id)
+        .is("character_id", null)
         .order("id", { ascending: false })
         .limit(10);
       setDrops((recent as GearItem[]) || []);
