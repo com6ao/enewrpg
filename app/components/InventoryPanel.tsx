@@ -37,6 +37,10 @@ export default function InventoryPanel({ mode = "sidebar" }: { mode?: "sidebar" 
   useEffect(() => {
     if (!char) return;
     (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+      if (!user) return;
+      
       const { data: owned } = await supabase
         .from("gear_items")
         .select("*")
@@ -45,8 +49,9 @@ export default function InventoryPanel({ mode = "sidebar" }: { mode?: "sidebar" 
 
       const { data: recent } = await supabase
         .from("gear_items")
-        .select("*")
+        eq("owner_user", user.id)
         .is("character_id", null)
+        .select("*")
         .order("id", { ascending: false })
         .limit(10);
       setDrops((recent as GearItem[]) || []);
