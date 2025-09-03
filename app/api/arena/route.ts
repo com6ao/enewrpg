@@ -1,10 +1,36 @@
 // app/api/arena/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 import { startCombat, stepCombat, type PublicSnapshot, type ClientCmd } from "@/lib/combat";
 import { rollLoot } from "@/lib/loot";
-import { getSupabaseServer } from "@/lib/supabaseServer";
 
 type Attr = { str: number; dex: number; intt: number; wis: number; con: number; cha: number; luck: number };
+
+function supabaseFromCookies() {
+  const store = cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          // Next 15: use getAll()
+          return store.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              store.set({ name, value, ...options });
+            });
+          } catch {
+            // edge runtimes podem bloquear set()
+          }
+        },
+      },
+    }
+  );
+}
 
 async function getPlayerFromDashboard(): Promise<{
   name: string;
@@ -13,7 +39,7 @@ async function getPlayerFromDashboard(): Promise<{
   gold: number;
   xp: number;
 }> {
-  const supabase = await getSupabaseServer();
+  const supabase = supabaseFromCookies();
 
   const {
     data: { user },
@@ -43,6 +69,7 @@ async function getPlayerFromDashboard(): Promise<{
     typeof data.xp === "number"
       ? Math.trunc(data.xp)
       : parseInt(String(data.xp ?? 0), 10);
+
   return { name: data.name ?? "Você", level: data.level ?? 1, attrs, gold: data.gold ?? 0, xp };
 }
 
@@ -58,6 +85,8 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as any;
   const op = (body?.op ?? "start") as "start" | "step";
 
+  const supabase = supabaseFromCookies();
+
   if (op === "start") {
     let snap: PublicSnapshot;
     try {
@@ -69,12 +98,10 @@ export async function POST(req: Request) {
     }
 
     const id = crypto.randomUUID();
-    const supabase = await getSupabaseServer();
     const { error: insertErr } = await supabase
       .from("arena_sessions")
       .insert({ id, srv: snap.srv, log_cursor: 0, status: "active", winner: null });
     if (insertErr) {
-      console.error("failed to create arena session", insertErr);
       if (process.env.NODE_ENV !== "production" && typeof insertErr === "object") {
         const { message, details, code } = insertErr as any;
         return NextResponse.json({ error: message, details, code }, { status: 500 });
@@ -89,7 +116,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "id inválido" }, { status: 400 });
   }
 
-  const supabase = await getSupabaseServer();
   const { data: rowData, error: rowErr } = await supabase
     .from("arena_sessions")
     .select("id, srv, log_cursor, status, winner")
@@ -111,28 +137,27 @@ export async function POST(req: Request) {
   const deltaGold = newGold - prevGold;
   const xpGain = snap.xpGain ?? 0;
   const newLevel = snap.srv.player.level;
-  
-  if (deltaGold > 0 || xpGain > 0 || newLevel !== prevLevel) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const updates: Record<string, any> = {};
-        if (deltaGold > 0) updates.gold = newGold;
-        if (xpGain > 0 || newLevel !== prevLevel) {
-          updates.xp = Math.trunc(Number(snap.srv.xp ?? 0));
-          updates.level = newLevel;
-        }
-        if (Object.keys(updates).length) {
-          const { error: updErr } = await supabase
-            .from("characters")
-            .update(updates)
-            .eq("user_id", user.id);
-          if (updErr) console.error("failed to update character", updErr);
-        }
+
+  // Atualiza character do usuário autenticado
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const updates: Record<string, any> = {};
+      if (deltaGold > 0) updates.gold = newGold;
+      if (xpGain > 0 || newLevel !== prevLevel) {
+        updates.xp = Math.trunc(Number(snap.srv.xp ?? 0));
+        updates.level = newLevel;
       }
-    } catch (err) {
-      console.error("failed to update character", err);
+      if (Object.keys(updates).length) {
+        const { error: updErr } = await supabase
+          .from("characters")
+          .update(updates)
+          .eq("user_id", user.id);
+        if (updErr) console.error("failed to update character", updErr);
+      }
     }
+  } catch (err) {
+    console.error("failed to update character", err);
   }
 
   const newLogs = snap.log.slice(row.log_cursor);
@@ -145,9 +170,7 @@ export async function POST(req: Request) {
       if (user) {
         drops = rollLoot();
         const rows = drops.map(item => ({ owner_user: user.id, character_id: null, ...item }));
-        const { error: insertErr } = await supabase
-          .from("gear_items")
-          .insert(rows);
+        const { error: insertErr } = await supabase.from("gear_items").insert(rows);
         if (insertErr) throw insertErr;
       }
     } catch {
@@ -179,7 +202,8 @@ export async function POST(req: Request) {
     lines: newLogs,
     status: row.status,
     winner: row.winner ?? null,
-    log_cursor: row.log_cursor,
+    cursor: row.log_cursor,       // compat com StepResp
+    log_cursor: row.log_cursor,   // retrocompat
     rewards: { gold: newGold, goldDelta: deltaGold, xp: xpGain, level: newLevel, drops },
   });
 }
