@@ -14,7 +14,9 @@ jobs:
 
       - name: Install Supabase CLI
         run: |
-          npm install -g supabase
+          wget https://github.com/supabase/cli/releases/latest/download/supabase-linux-amd64
+          chmod +x supabase-linux-amd64
+          sudo mv supabase-linux-amd64 /usr/local/bin/supabase
 
       - name: Run Supabase Migrations
         run: supabase db push --yes
