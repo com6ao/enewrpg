@@ -1,4 +1,4 @@
-name: Supabase Migrations
+name: CI + Supabase Migrations
 
 on:
   push:
@@ -6,11 +6,20 @@ on:
       - main
 
 jobs:
-  migrate:
+  build-test-migrate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
 
       - name: Install Supabase CLI
         run: |
