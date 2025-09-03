@@ -1,4 +1,5 @@
 name: Supabase Migrations
+
 on:
   push:
     branches:
@@ -8,24 +9,8 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Check token access
-        run: supabase projects list
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      - name: Link to Supabase
-        run: |
-          supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --password "${{ secrets.SUPABASE_DB_PASSWORD }}" --debug
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      - name: Run migrations
-        run: supabase db push --debug --non-interactive
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run Supabase Migrations
+        run: supabase db push --yes
