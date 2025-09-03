@@ -76,7 +76,7 @@ function applyDamage(att:Unit,def:Unit,rawBase:number,kind:DmgKind,calc:Calc[],l
   if(h.crit) dmg=Math.floor((dmg*critMultiplier(att.attrs))/100);
   if(roll(damageReductionChance(def.attrs))){ dmg=Math.floor((dmg*(100-damageReductionPercent))/100); calc.push({side:def.id,text:`redução de dano acionada (-${damageReductionPercent}%)`}); }
   calc.push({side:att.id,text:`${label}: base=${base} • res=${res} • ${h.crit?"CRIT":"HIT"} • true=${h.trueDmg?"sim":"não"} • final=${dmg}`});
-  def.hp=clamp(def.hp-dmg,0,def.hpMax); return {dmg,miss:false,crit:h.crit};
+  def.hp=Math.max(0,Math.min(def.hpMax,def.hp-dmg)); return {dmg,miss:false,crit:h.crit};
 }
 
 function doBasic(att:Unit,def:Unit,log:Log[],calc:Calc[]){
@@ -117,8 +117,8 @@ function bonusAction(att:Unit,def:Unit,log:Log[],calc:Calc[],cmd?:ClientCmd){
 }
 
 function speed(u:Unit){ return 0.4+attackSpeed(u.attrs)*0.08; }
-function gain(u:Unit){ u.atb=clamp(u.atb+speed(u),0,120); }
-function spend(u:Unit){ u.atb=clamp(u.atb-100,0,120); u.usedFull=false; u.usedBonus=false; applyBuffDecay(u); }
+function gain(u:Unit){ u.atb=Math.max(0,Math.min(120,u.atb+speed(u))); }
+function spend(u:Unit){ u.atb=Math.max(0,Math.min(120,u.atb-100)); u.usedFull=false; u.usedBonus=false; applyBuffDecay(u); }
 
 function chooseAI(att:Unit,def:Unit):ClientCmd{
   const canStrong=att.mp>=10 && meleeAttack(att.attrs)>=magicAttack(att.attrs);
@@ -246,8 +246,8 @@ export function stepCombat(prev:ServerState, cmd?:ClientCmd):PublicSnapshot{
     s.stage+=1;
     s.enemy=spawnEnemy(s.stage);
 
-    s.player.hp=clamp(s.player.hp+Math.floor(s.player.hpMax*0.03),0,s.player.hpMax);
-    s.player.mp=clamp(s.player.mp+Math.floor(s.player.mpMax*0.03),0,s.player.mpMax);
+    s.player.hp=Math.max(0,Math.min(s.player.hpMax,s.player.hp+Math.floor(s.player.hpMax*0.03)));
+    s.player.mp=Math.max(0,Math.min(s.player.mpMax,s.player.mp+Math.floor(s.player.mpMax*0.03)));
   }
 
   return { player:copyPub(s.player) as any, enemy:copyPub(s.enemy) as any, log, calc, srv:s, enemyDefeated, xpGain, levelUp:leveledUp };
