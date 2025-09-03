@@ -2,30 +2,50 @@ name: CI + Supabase Migrations
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: write   # necessário para commitar o lockfile
 
 jobs:
   build-test-migrate:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      # FASE 1: gerar lockfile se não existir
+      - name: Setup Node (no cache)
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
+      - name: Generate lockfile if missing
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+          fi
+
+      - name: Commit lockfile if created
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(ci): add package-lock.json (auto-generated)"
+          file_pattern: package-lock.json
+          commit_user_name: github-actions
+          commit_user_email: actions@github.com
+          branch: ${{ github.ref_name }}
+
+      # FASE 2: instalar, buildar e migrar
       - name: Install dependencies
         run: npm ci
 
       - name: Build project
-        run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npm run build
 
       - name: Run tests
         run: npm test
