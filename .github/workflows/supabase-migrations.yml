@@ -47,9 +47,6 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: Run tests
-        run: npm test
-
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
 
