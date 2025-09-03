@@ -12,5 +12,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Install Supabase CLI
+        run: |
+          npm install -g supabase
+
       - name: Run Supabase Migrations
         run: supabase db push --yes
