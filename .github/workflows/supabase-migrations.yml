@@ -14,11 +14,20 @@ jobs:
 
       - name: Install Supabase CLI
         run: |
-          rm -rf supabase # remove arquivo ou diretório antigo
+          rm -rf supabase
           wget https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz
           tar -xzf supabase_linux_amd64.tar.gz
           chmod +x supabase
           sudo mv supabase /usr/local/bin/supabase
 
+      - name: Link Supabase project
+        run: supabase link --project-ref $SUPABASE_PROJECT_REF
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
       - name: Run Supabase Migrations
         run: supabase db push --yes
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
