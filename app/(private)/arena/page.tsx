@@ -36,7 +36,6 @@ type StepResp = {
   rewards: { gold: number; goldDelta: number; xp: number; level: number; drops: any[] };
 };
 
-
 /* UI base compacta */
 const card: React.CSSProperties = { background: "#0b0b0b", border: "1px solid #1e1e1e", borderRadius: 10, padding: 8 };
 const stageName = (s: number) => (s === 1 ? "Rato Selvagem" : s === 2 ? "Lobo Faminto" : s === 3 ? "Goblin Batedor" : `Elite ${s}`);
@@ -93,8 +92,6 @@ export default function ArenaPage() {
     }
   }, [arenaId, ended, auto]);
 
-
-
   useEffect(() => {
     document.body.classList.add("arena-page");
     return () => document.body.classList.remove("arena-page");
@@ -141,6 +138,7 @@ export default function ArenaPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ op: "step", id, cmd }),
+        credentials: "include",
       });
       console.log("stepOnce:response", r.status);
       if (!r.ok) {
@@ -222,7 +220,7 @@ export default function ArenaPage() {
     setSnap(null);
     pendingCmd.current = null;
     try {
-      const r = await fetch("/api/arena", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "start" }) });
+      const r = await fetch("/api/arena", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "start" }), credentials: "include" });
       if (!r.ok) {
         alert(await r.text());
         return;
