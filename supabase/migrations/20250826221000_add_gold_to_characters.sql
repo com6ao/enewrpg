@@ -1,1 +1,1 @@
-alter table characters add column gold int default 0;
+ALTER TABLE IF EXISTS characters ADD COLUMN IF NOT EXISTS gold integer DEFAULT 0;
