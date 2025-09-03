@@ -1,1 +1,1 @@
-ALTER TABLE characters ADD COLUMN xp integer DEFAULT 0;
+ALTER TABLE IF EXISTS characters ADD COLUMN IF NOT EXISTS xp integer DEFAULT 0;
